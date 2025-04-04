@@ -80,7 +80,7 @@ getUsername() {
     # Check if token is missing or doesn't match either valid pattern
     if [[ -z "$GITHUB_TOKEN" ]] ||
         { [[ ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ ]] && [[ ! "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9]{82}$ ]]; }; then
-        echo "Error: Invalid or missing GitHub token"
+        # echo "Error: Invalid or missing GitHub token"
         return 1
     fi
 
@@ -90,7 +90,7 @@ getUsername() {
     json_response="${response:0:${#response}-3}"
 
     if [[ "$http_status" -ne 200 ]]; then
-        echo "Error: Invalid token or API error (HTTP $http_status)"
+        # echo "Error: Invalid token or API error (HTTP $http_status)"
         return 1
     fi
 
@@ -110,7 +110,7 @@ checkPrivate() {
     json_response="${response:0:${#response}-3}"
 
     if [[ "$http_status" -ne 200 ]]; then
-        echo "Error: Invalid token or API error (HTTP $http_status)"
+        # echo "Error: Invalid token or API error (HTTP $http_status)"
         return 1
     fi
 
