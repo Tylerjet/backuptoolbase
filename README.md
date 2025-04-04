@@ -5,7 +5,7 @@ Backup Tool Base is a Partial rewrite of klipper-backup but just base functional
 
 ### Download:
 ```shell
-curl -fsSL (Add Raw link to install.sh?) | bash
+curl -fsSL https://github.com/Tylerjet/backuptoolbase/blob/main/install.sh | bash
 ```
 
 ### Installation/Configuration:
