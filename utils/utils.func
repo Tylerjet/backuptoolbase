@@ -14,6 +14,7 @@ NC=$'\e[0m'    # No Color ${NC}
 CL=$'\r\033[K' # Clear Line
 UL=$'\e[4m'    # Underline
 BOLD=$'\e[1m'  # Bold
+TAB="   " # Indent
 TITLE="Backup Tool Base"
 
 gotoHome() {
@@ -53,32 +54,13 @@ line() {
     echo -e "\n===============================================================================================================\n"
 }
 
-getcursor() {
-    local pos
-    # Send the escape sequence to the terminal device.
-    printf '\e[6n' >/dev/tty
-    # Read the response (expected to be ESC [ row ; col R) from /dev/tty.
-    IFS='[;' read -d R -rs -a pos </dev/tty
-    echo "${pos[1]}"
-}
-
 run_command() {
     command=$1
-    loading_wheel "   ${Y}●${NC} Running $command" &
+    loading_wheel "${TAB}${Y}●${NC} Running $command" &
     loading_pid=$!
     sudo $command >/dev/null 2>&1
     kill $loading_pid
-    echo -e "${CL}   ${G}●${NC} Running $command ${G}Done!${NC}"
-}
-
-# Move cursor up one line and clear the line
-clearUp() {
-    echo -e "\r\033[K\033[1A"
-}
-
-# Function to move the cursor to a specific position
-function move_cursor() {
-    echo -e "\033[${1};${2}H"
+    echo -e "${CL}${TAB}${G}●${NC} Running $command ${G}Done!${NC}"
 }
 
 checkExit() {

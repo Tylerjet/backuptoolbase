@@ -317,7 +317,7 @@ install_filewatch_service() {
             echo -e "${Y}●${NC} Installing latest version of inotify-tools (This may take a few minutes)"
             sudo rm -rf inotify-tools/                              # remove folder incase it for some reason still exists
             sudo rm -f /usr/bin/fsnotifywait /usr/bin/fsnotifywatch # remove symbolic links to keep error about file exists from occurring
-            loading_wheel "   ${Y}●${NC} Clone inotify-tools repo" &
+            loading_wheel "${TAB}${Y}●${NC} Clone inotify-tools repo" &
             loading_pid=$!
             git clone https://github.com/inotify-tools/inotify-tools.git 2>/dev/null
             kill $loading_pid
