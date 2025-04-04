@@ -5,7 +5,7 @@ Backup Tool Base is a simple tool that I got the idea from my assisting of klipp
 
 ### Download:
 ```shell
-curl -fsSL https://github.com/Tylerjet/backuptoolbase/blob/main/install.sh | bash
+git clone https://github.com/Tylerjet/backuptoolbase
 ```
 
 ### Installation/Configuration:
