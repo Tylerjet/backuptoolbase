@@ -439,6 +439,7 @@ install_cron() {
 
 # === Main === #
 {
+    init
     clear
     sudo -v
     commonDeps
