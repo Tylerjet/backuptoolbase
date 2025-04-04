@@ -1,0 +1,201 @@
+R=$'\e[91m'    # Red ${BR}
+G=$'\e[92m'    # Green ${G}
+Y=$'\e[93m'    # Yellow ${Y}
+B=$'\e[94m'    # Blue ${B}
+M=$'\e[95m'    # Magenta ${M}
+C=$'\e[96m'    # Cyan ${C}
+DR=$'\e[31m'   # Dark Red ${DR}
+DG=$'\e[32m'   # Dark Green ${DG}
+DY=$'\e[33m'   # Dark Yellow ${DY}
+DB=$'\e[34m'   # Dark Blue ${DB}
+DM=$'\e[35m'   # Dark Magenta ${DM}
+DC=$'\e[36m'   # Dark Cyan ${DC}
+NC=$'\e[0m'    # No Color ${NC}
+CL=$'\r\033[K' # Clear Line
+UL=$'\e[4m'    # Underline
+BOLD=$'\e[1m'  # Bold
+
+# Create unique id for git email
+getUniqueid() {
+    echo $(date +%s%N | md5sum | head -c 7)
+}
+
+wantsafter() {
+    if dpkg -l | grep -q '^ii.*network-manager' && systemctl is-active --quiet "NetworkManager"; then
+        echo "NetworkManager-wait-online.service"
+    else
+        echo "network-online.target"
+    fi
+}
+
+loading_wheel() {
+    local frames="/ - \\ |"
+    local delay=0.1
+
+    while :; do
+        for frame in $frames; do
+            echo -n -e "\r$1 $frame"
+            sleep $delay
+        done
+    done
+}
+
+line() {
+    echo -e "\n===============================================================================================================\n"
+}
+
+getcursor() {
+    local pos
+    # Send the escape sequence to the terminal device.
+    printf '\e[6n' >/dev/tty
+    # Read the response (expected to be ESC [ row ; col R) from /dev/tty.
+    IFS='[;' read -d R -rs -a pos </dev/tty
+    echo "${pos[1]}"
+}
+
+run_command() {
+    command=$1
+    loading_wheel "   ${Y}●${NC} Running $command" &
+    loading_pid=$!
+    sudo $command >/dev/null 2>&1
+    kill $loading_pid
+    echo -e "${CL}   ${G}●${NC} Running $command ${G}Done!${NC}"
+}
+
+# Move cursor up one line and clear the line
+clearUp() {
+    echo -e "\r\033[K\033[1A"
+}
+
+# Function to move the cursor to a specific position
+function move_cursor() {
+    echo -e "\033[${1};${2}H"
+}
+
+checkExit() {
+    if [ $1 -ne 0 ]; then
+        result=$(whiptail --title "$title" --menu "Select an option:" 15 75 3 \
+            "Redo" "| Retry current prompt" \
+            "Back" "| Go back to previous prompt" \
+            "Quit" "| Quit the script" 3>&1 1>&2 2>&3)
+        echo $result
+    fi
+}
+
+getUsername() {
+    GITHUB_TOKEN="$1"
+    API_URL="https://api.github.com/user"
+
+    # Check if token is provided and has a basic format validation
+    if [[ -z "$GITHUB_TOKEN" || ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ || "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9]{36}$ ]]; then
+        echo "Error: Invalid or missing GitHub token"
+        return 1
+    fi
+
+    response=$(curl -s -w "%{http_code}" -H "Authorization: token $GITHUB_TOKEN" "$API_URL")
+    
+    http_status="${response: -3}"
+    json_response="${response:0:${#response}-3}"
+
+    if [[ "$http_status" -ne 200 ]]; then
+        echo "Error: Invalid token or API error (HTTP $http_status)"
+        return 1
+    fi
+
+    username=$(echo "$json_response" | jq -r '.login')
+    echo "$username"
+}
+
+checkPrivate() {
+    GITHUB_TOKEN="$1"
+    OWNER="$2"
+    REPO="$3"
+    API_URL="https://api.github.com/repos"
+
+    response=$(curl -s -w "%{http_code}" -H "Authorization: token $GITHUB_TOKEN" "$API_URL/$OWNER/$REPO")
+
+    http_status="${response: -3}"
+    json_response="${response:0:${#response}-3}"
+
+    if [[ "$http_status" -ne 200 ]]; then
+        echo "Error: Invalid token or API error (HTTP $http_status)"
+        return 1
+    fi
+
+    PRIVATE=$(echo "$json_response" | jq -r '.private')
+    echo "$PRIVATE"
+}
+
+service_exists() {
+    if systemctl list-unit-files | grep -q "$1.service"; then
+        return 0 # Service exists
+    else
+        return 1 # Service does not exist
+    fi
+}
+
+checkinotify() {
+    local_version=$(inotifywait -h | grep -oP '\d+\.\d+\.\d+\.\d+')
+    # Get the latest release information from the GitHub repository
+    latest_release=$(curl -s "https://api.github.com/repos/inotify-tools/inotify-tools/releases/latest")
+    # Extract the latest release version number
+    latest_version=$(echo "$latest_release" | jq -r '.tag_name')
+
+    # Compare the installed version with the latest version
+    if [[ $local_version == $latest_version ]]; then
+        return 0 #Local matches latest
+    else
+        return 1 #Local does not match latest
+    fi
+}
+
+commonDeps() {
+    check_dependencies "jq" "curl" "rsync"
+    sleep 1
+}
+
+check_dependencies() {
+    for pkg in "$@"; do
+        if ! command -v "$pkg" &>/dev/null; then
+            # Check the package manager and attempt a silent install
+            if command -v apt-get &>/dev/null; then
+                sudo apt-get update >/dev/null
+                sudo apt-get install -y "$pkg" >/dev/null 2>&1
+            elif command -v dnf &>/dev/null; then
+                sudo dnf install -y "$pkg" >/dev/null 2>&1
+            elif command -v pacman &>/dev/null; then
+                sudo pacman -S --noconfirm "$pkg" >/dev/null 2>&1
+            elif command -v apk &>/dev/null; then
+                sudo apk add "$pkg" >/dev/null 2>&1
+            else
+                echo "Unsupported package manager. Please install '$pkg' manually."
+                return 1
+            fi
+
+            # Check if the installation was successful
+            if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+                echo "Installation failed. Please install '$pkg' manually."
+                return 1
+            fi
+        fi
+    done
+}
+
+removeOldInotify() {
+    oldInotify=("inotifywait" "libinotifytools0" "libinotifytools0-dev")
+    for pkg in "${oldInotify[@]}"; do
+        # Check the package manager and attempt a silent install
+        if command -v apt-get &>/dev/null; then
+            sudo apt remove -y $pkg >/dev/null 2>&1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf remove -y $pkg >/dev/null 2>&1
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -Rs --noconfirm $pkg >/dev/null 2>&1
+        elif command -v apk &>/dev/null; then
+            sudo apk remove $pkg >/dev/null 2>&1
+        else
+            echo "Unsupported package manager. Please remove inotify-tools manually."
+            return 1
+        fi
+    done
+}
