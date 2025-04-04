@@ -179,7 +179,7 @@ configure() {
                     whiptail --msgbox "Branch name cannot be empty!" 10 50
                     continue
                 fi
-                sed -i "s/^branch_name=.*/branch_name=\"$repobranch\"/" "$HOME/backuptoolbase/.env"
+                sed -i "s/^branch_name=.*/branch_name=\"$ghbranch\"/" "$HOME/backuptoolbase/.env"
             fi
             if [ -z $commitname ]; then
                 commitname=$(whiptail --title "$TITLE Install" --inputbox "Enter your desired git commit username:" 10 50 "$(whoami)" 3>&1 1>&2 2>&3)
