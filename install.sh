@@ -395,7 +395,7 @@ install_backup_service() {
         ) &
 
             start_time=$(date +%s)
-            timeout_duration=20
+            timeout_duration=30
 
             while [ "$(ps -p $! -o comm=)" ]; do
                 # Calculate elapsed time
