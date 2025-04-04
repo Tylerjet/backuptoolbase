@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source "$HOME/klipper-backup/.env"
+source "$HOME/backuptoolbase/.env"
 watchlist=""
 for path in "${backupPaths[@]}"; do
     for file in $path; do
@@ -34,5 +34,5 @@ inotifywait -mrP -e close_write -e move -e delete --exclude "$exclude_pattern" $
             file=$(basename "$path")
         fi
         echo "Event Type: $event, Watched Path: $path, File Name: $file"
-        file="$file" /usr/bin/env bash -c "/usr/bin/env bash  $HOME/klipper-backup/script.sh -c \"\$file modified - \$(date +'%x - %X')\"" >/dev/null 2>&1
+        file="$file" /usr/bin/env bash -c "/usr/bin/env bash  $HOME/backuptoolbase/script.sh -c \"\$file modified - \$(date +'%x - %X')\"" >/dev/null 2>&1
     done

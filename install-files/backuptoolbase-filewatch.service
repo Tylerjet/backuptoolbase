@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup Tool Base Filewatch Service
+After=
+Wants=
+
+[Service]
+User=
+Type=simple
+ExecStart=/usr/bin/env bash -c '"$HOME/backuptoolbase/utils/filewatch.sh"'
+
+[Install]
+WantedBy=default.target
