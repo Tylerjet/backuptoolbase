@@ -16,6 +16,14 @@ UL=$'\e[4m'    # Underline
 BOLD=$'\e[1m'  # Bold
 TITLE="Backup Tool Base"
 
+gotoHome() {
+    cd "$HOME" # yes this is dumb but to me it looks cleaner at the end of a script
+}
+
+gotoBackupFolder() {
+    cd "$backup_path"
+}
+
 # Create unique id for git email
 getUniqueid() {
     echo $(date +%s%N | md5sum | head -c 7)
@@ -94,7 +102,7 @@ getUsername() {
     fi
 
     response=$(curl -s -w "%{http_code}" -H "Authorization: token $GITHUB_TOKEN" "$API_URL")
-    
+
     http_status="${response: -3}"
     json_response="${response:0:${#response}-3}"
 

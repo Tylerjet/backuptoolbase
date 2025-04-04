@@ -50,7 +50,7 @@ createBackupFolder() {
         mkdir -p "$backup_path"
     fi
 
-    cd "$backup_path"
+    gotoBackupFolder
 
     if [ ! -d ".git" ]; then
         mkdir .git
@@ -108,8 +108,6 @@ checkEnv() {
 }
 
 copyFiles() {
-    cd "$HOME"
-
     # Copy folder to backup path to be pushed to repo
     rsync -Rr "${backup_restore_data##"$HOME"/}" "$backup_path"
     # Delete restore folder so next backup data is fresh
@@ -194,6 +192,7 @@ cleanUp() {
     checkUpdates
     createBackupFolder
     checkEnv
+    gotoHome
     copyFiles
     pre-commitCleanup
     pushCommit
