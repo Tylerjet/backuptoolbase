@@ -35,14 +35,7 @@ init() {
 
 # === Functions === #
 checkUpdates() {
-    local local_head=$(git -C "$parent_path" rev-parse HEAD)
-    local remote_head=$(git -C "$parent_path" ls-remote "$(git -C "$parent_path" rev-parse --abbrev-ref @{u} | sed 's/\// /g')" | cut -f1)
-
-    if [ "$local_head" = "$remote_head" ]; then
-        echo -e "Up to date\n"
-    else
-        echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
-    fi
+[ $(git -C "$parent_path" rev-parse HEAD) = $(git -C "$parent_path" ls-remote $(git -C "$parent_path" rev-parse --abbrev-ref @{u} | sed 's/\// /g') | cut -f1) ] && echo -e "Up to date\n" || echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
 }
 
 createBackupFolder() {
