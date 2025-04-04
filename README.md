@@ -10,5 +10,5 @@ curl -fsSL https://github.com/Tylerjet/backuptoolbase/blob/main/install.sh | bas
 
 ### Installation/Configuration:
 ```shell
-~/klipper-backup/install.sh
+~/backuptoolbase/install.sh
 ```
