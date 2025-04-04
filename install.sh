@@ -447,7 +447,6 @@ install_cron() {
     install_update
     configure
     promptOptional
-    patch_backuptoolbase_update_manager
     install_filewatch_service
     install_backup_service
     install_cron
