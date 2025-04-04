@@ -79,7 +79,7 @@ getUsername() {
 
     # Check if token is missing or doesn't match either valid pattern
     if [[ -z "$GITHUB_TOKEN" ]] ||
-        { [[ ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ ]] && [[ "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9_]{82}$ ]]; }; then
+        { [[ ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ ]] && [[ ! "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9_]{82}$ ]]; }; then
         # echo "Error: Invalid or missing GitHub token"
         return 1
     fi
