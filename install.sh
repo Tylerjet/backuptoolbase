@@ -24,7 +24,7 @@ install_update() {
         3>&1 1>&2 2>&3)
 
     if [ $? -ne 0 ]; then
-        clear
+        #clear
         echo -e "${R}●${NC} Installation aborted.\n"
         exit 1
     fi
@@ -50,7 +50,7 @@ install_update() {
             check_updates
         fi
     else
-        clear
+        #clear
         echo -e "${R}●${NC} Installation aborted.\n"
         exit 1
     fi
@@ -439,11 +439,11 @@ install_cron() {
 
 # === Main === #
 {
-    clear
+    #clear
     sudo -v
     init
     commonDeps
-    clear
+    #clear
     install_update
     configure
     promptOptional
