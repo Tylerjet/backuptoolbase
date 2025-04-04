@@ -321,7 +321,7 @@ install_filewatch_service() {
             loading_pid=$!
             git clone https://github.com/inotify-tools/inotify-tools.git 2>/dev/null
             kill $loading_pid
-            echo -e "${CL}   ${G}●${NC} Clone inotify-tools repo ${G}Done!${NC}"
+            echo -e "${CL}${TAB}${G}●${NC} Clone inotify-tools repo ${G}Done!${NC}"
             sudo apt-get install autoconf autotools-dev automake libtool -y >/dev/null 2>&1
 
             cd inotify-tools/
