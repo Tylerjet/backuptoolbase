@@ -78,7 +78,7 @@ getUsername() {
     API_URL="https://api.github.com/user"
 
     # Check if token is provided and has a basic format validation
-    if [[ -z "$GITHUB_TOKEN" ]] || [[ ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ ]] || [[ ! "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9]{36}$ ]]; then
+    if [[ -z "$GITHUB_TOKEN" ]] || [[ ! "$GITHUB_TOKEN" =~ ^ghp_[A-Za-z0-9]{36}$ ]] || [[ ! "$GITHUB_TOKEN" =~ ^github_pat_[A-Za-z0-9]{82}$ ]]; then
         echo "Error: Invalid or missing GitHub token"
         return 1
     fi
