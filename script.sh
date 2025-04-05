@@ -35,7 +35,7 @@ init() {
 
 # === Functions === #
 checkUpdates() {
-[ $(git -C "$parent_path" rev-parse HEAD) = $(git -C "$parent_path" ls-remote $(git -C "$parent_path" rev-parse --abbrev-ref @{u} | sed 's/\// /g') | cut -f1) ] && echo -e "Up to date\n" || echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
+    [ $(git -C "$parent_path" rev-parse HEAD) = $(git -C "$parent_path" ls-remote $(git -C "$parent_path" rev-parse --abbrev-ref @{u} | sed 's/\// /g') | cut -f1) ] && echo -e "Up to date\n" || echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
 }
 
 createBackupFolder() {
@@ -182,8 +182,8 @@ cleanUp() {
     checkEnv
     gotoHome
     copyFiles
-    pre-commitCleanup
     gotoBackupFolder
+    pre-commitCleanup
     pushCommit
     # cleanUp
 }
