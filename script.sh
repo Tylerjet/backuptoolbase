@@ -184,5 +184,5 @@ cleanUp() {
     copyFiles
     pre-commitCleanup
     pushCommit
-    cleanUp
+    # cleanUp
 }
