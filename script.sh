@@ -101,11 +101,6 @@ checkEnv() {
 }
 
 copyFiles() {
-    # Copy folder to backup path to be pushed to repo
-    rsync -Rr "${backup_restore_data##"$HOME"/}" "$backup_path"
-    # Delete restore folder so next backup data is fresh
-    rm -rf $backup_restore_data
-
     # Iterate through backupPaths array and copy files to the backup folder while ignoring symbolic links
     for path in "${backupPaths[@]}"; do
         fullPath="$HOME/$path"
