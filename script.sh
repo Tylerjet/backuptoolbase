@@ -148,18 +148,15 @@ copyFiles() {
     done
 }
 
-commitMsg() {
-    # Individual commit message, if no parameter is set, use the current timestamp as commit message
-    if ! $commit_message_used; then
-        commit_message="New backup from $(date +"%x - %X")"
-    fi
-}
-
 pre-commitCleanup() {
     git rm -r --cached . >/dev/null 2>&1
 }
 
 pushCommit() {
+    # Individual commit message, if no parameter is set, use the current timestamp as commit message
+    if ! $commit_message_used; then
+        commit_message="New backup from $(date +"%x - %X")"
+    fi
     git add .
     git commit -m "$commit_message"
     # Check if HEAD still matches remote (Means there are no updates to push) and create a empty commit just informing that there are no new updates to push
