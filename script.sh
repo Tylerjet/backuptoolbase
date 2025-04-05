@@ -183,6 +183,7 @@ cleanUp() {
     gotoHome
     copyFiles
     pre-commitCleanup
+    gotoBackupFolder
     pushCommit
     # cleanUp
 }
