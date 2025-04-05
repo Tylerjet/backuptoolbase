@@ -182,5 +182,5 @@ cleanUp() {
     gotoBackupFolder
     pre-commitCleanup
     pushCommit
-    # cleanUp
+    cleanUp
 }
