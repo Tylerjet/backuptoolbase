@@ -17,7 +17,7 @@ init() {
 
     backup_folder="$branch_name-backup"
     backup_path="$HOME/$backup_folder"
-    allow_empty_commits=${allow_empty_commits:-true}
+    allow_empty_commits=${allow_empty_commits:-false}
     git_protocol=${git_protocol:-"https"}
     git_host=${git_host:-"github.com"}
     ssh_user=${ssh_user:-"git"}
