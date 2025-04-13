@@ -13,7 +13,6 @@ init() {
 
     source "$parent_path"/.env
     source "$parent_path"/utils/utils.func
-    [[ "$1" == "--debug" ]] && source "$parent_path"/utils/debug.func
 
     backup_folder="$branch_name-backup"
     backup_path="$HOME/$backup_folder"
@@ -31,6 +30,35 @@ init() {
     commit_message_used=false
     debug_output=false
     args="$@"
+
+    # Check parameters
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -f | --fix)
+            fix
+            shift
+            ;;
+        -c | --commit_message)
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                echo -e "${CL}${R}Error: commit message expected after $1${NC}" >&2
+                exit 1
+            else
+                commit_message="$2"
+                commit_message_used=true
+                shift 2
+            fi
+            ;;
+        -d | --debug)
+            source "$parent_path"/utils/debug.func
+            shift
+            ;;
+        # *)
+        #     echo -e "${CL}${R}Unknown option: $1${NC}"
+        #     show_help
+        #     exit 1
+        #     ;;
+        esac
+    done
 }
 
 # === Functions === #
