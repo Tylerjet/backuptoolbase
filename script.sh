@@ -49,7 +49,7 @@ init() {
             fi
             ;;
         -d | --debug)
-            source "$parent_path"/utils/debug.func
+            debug_output=true
             shift
             ;;
         *)
@@ -196,6 +196,8 @@ pushCommit() {
 cleanUp() {
     find "$backup_path" -maxdepth 1 -mindepth 1 ! -name '.git' ! -name '.gitmodules' ! -name 'README.md' -exec rm -rf {} \;
 }
+
+[[ "$debug_output" == true ]] && source "$parent_path"/utils/debug.func
 
 # === Main === #
 main() {
