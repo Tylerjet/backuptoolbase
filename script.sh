@@ -52,11 +52,10 @@ init() {
             source "$parent_path"/utils/debug.func
             shift
             ;;
-        # *)
-        #     echo -e "${CL}${R}Unknown option: $1${NC}"
-        #     show_help
-        #     exit 1
-        #     ;;
+        *)
+            echo -e "${CL}${R}Unknown option: $1${NC}"
+            exit 1
+            ;;
         esac
     done
 }
