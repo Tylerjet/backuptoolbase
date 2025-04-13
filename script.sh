@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # === Initialization === #
-init() {
+# init() {
     # set dotglob so that bash treats hidden files/folders starting with . correctly when copying them
     shopt -s dotglob
 
@@ -58,7 +58,7 @@ init() {
             ;;
         esac
     done
-}
+# }
 
 # === Functions === #
 checkUpdates() {
@@ -199,7 +199,7 @@ cleanUp() {
 
 # === Main === #
 {
-    init
+    # init
     commonDeps
     checkUpdates
     createBackupFolder
