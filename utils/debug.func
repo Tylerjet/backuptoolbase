@@ -11,9 +11,7 @@ debug_checkUpdates() {
 
 for fn in "${functions_to_hook[@]}"; do
     # Dynamically redefine with a wrapper via process substitution
-    source <(
-        sed "s/^${fn}()/${fn}_original()/" < <(declare -f "$fn")
-        cat <<EOF
+    source <( sed "s/^${fn}()/${fn}_original()/" cat < <(declare -f "$fn") <<EOF
 
 ${fn}() {
     ${fn}_original
