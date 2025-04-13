@@ -11,14 +11,14 @@ debug_checkUpdates() {
 
 for fn in "${functions_to_hook[@]}"; do
     # Dynamically redefine with a wrapper via process substitution
-    source <( sed "s/^${fn}()/${fn}_original()/" cat < <(declare -f "$fn") <<EOF
+    source <(sed "s/^${fn}()/${fn}_original()/" < <(declare -f "$fn"); cat <<EOF
 
 ${fn}() {
     ${fn}_original
-    debug_${fn} &
+    debug_hook_${fn} &
 }
 EOF
-    )
+)
 done
 
 # Debug output: Show last command
