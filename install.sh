@@ -439,11 +439,11 @@ install_cron() {
 
 # === Main === #
 {
-    #clear
+    clear
     sudo -v
     init
     commonDeps
-    #clear
+    clear
     install_update
     configure
     promptOptional
