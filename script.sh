@@ -198,7 +198,7 @@ cleanUp() {
 }
 
 # === Main === #
-{
+main() {
     init "$@"
     commonDeps
     checkUpdates
@@ -211,3 +211,5 @@ cleanUp() {
     pushCommit
     cleanUp
 }
+
+main "$@"
