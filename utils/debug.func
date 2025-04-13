@@ -3,7 +3,6 @@
 functions_to_hook=("checkUpdates")
 
 debug_checkUpdates() {
-    checkUpdates_Original
     begin_debug_line
     echo -e "Running on branch: $(git -C "$parent_path" branch --show-current)"
     echo -e "Running on commit: $(git -C "$parent_path" rev-parse HEAD | cut -c1-7)"
