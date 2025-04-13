@@ -1,3 +1,29 @@
+#!/bin/bash
+
+functions_to_hook=("checkUpdates")
+
+debug_checkUpdates() {
+    checkUpdates_Original
+    begin_debug_line
+    echo -e "Running on branch: $(git -C "$parent_path" branch --show-current)"
+    echo -e "Running on commit: $(git -C "$parent_path" rev-parse HEAD | cut -c1-7)"
+    end_debug_line
+}
+
+for fn in "${functions_to_hook[@]}"; do
+    # Dynamically redefine with a wrapper via process substitution
+    source <(
+        sed "s/^${fn}()/${fn}_original()/" < <(declare -f "$fn")
+        cat <<EOF
+
+${fn}() {
+    ${fn}_original
+    debug_${fn} &
+}
+EOF
+    )
+done
+
 # Debug output: Show last command
 debug_lastcommand() {
     begin_debug_line
@@ -16,7 +42,7 @@ debug_envfile() {
         else
             echo "$line"
         fi
-    done <$HOME/klipper-backup/.env
+    done <$HOME/$(basename $(git rev-parse --show-toplevel))/.env
     end_debug_line
 }
 
@@ -72,32 +98,15 @@ debug_backuppathafter() {
     end_debug_line
 }
 
-# Debug output: Show current commit
-debug_currentcommit() {
-    echo -e "Running on commit: $(git -C "$parent_path" rev-parse HEAD | cut -c1-7)"
-}
-
-# Debug output: Show current branch
-debug_currentbranch() {
-    echo -e "Running on branch: $(git -C "$parent_path" branch --show-current)"
-}
-
 # Debug output: Systemd services
 debug_systemdservices() {
     begin_debug_line
-    echo -e "List/Status of Klipper-Backup related systemd services:\n\n"
-    echo -e "klipper-backup-filewatch.service:\n"
-    systemctl status klipper-backup-filewatch.service | head -n 50
-    echo -e "\nklipper-backup-on-boot.service:\n"
-    systemctl status klipper-backup-on-boot.service | head -n 50
-    echo -e "\nklipper-backup.service:\n"
-    systemctl status klipper-backup.service | head -n 50
-    end_debug_line
-}
-
-debug_repodata() {
-    begin_debug_line
-    debug_currentbranch
-    debug_currentcommit
+    echo -e "List/Status of backuptoolbase related systemd services:\n\n"
+    echo -e "backuptoolbase-filewatch.service:\n"
+    systemctl status backuptoolbase-filewatch.service | head -n 50
+    echo -e "\nbackuptoolbase-on-boot.service:\n"
+    systemctl status backuptoolbase-on-boot.service | head -n 50
+    echo -e "\nbackuptoolbase.service:\n"
+    systemctl status backuptoolbase.service | head -n 50
     end_debug_line
 }

@@ -13,8 +13,8 @@ DC=$'\e[36m'   # Dark Cyan ${DC}
 NC=$'\e[0m'    # No Color ${NC}
 CL=$'\r\033[K' # Clear Line
 #UL=$'\e[4m'    # Underline
-BOLD=$'\e[1m'  # Bold
-TAB="   "      # Indent
+BOLD=$'\e[1m' # Bold
+TAB="   "     # Indent
 TITLE="Backup Tool Base"
 
 gotoHome() {
@@ -190,4 +190,12 @@ removeOldInotify() {
             return 1
         fi
     done
+}
+
+begin_debug_line() {
+    echo -e "\n------------DEBUG:------------"
+}
+
+end_debug_line() {
+    echo -e "------------------------------\n"
 }

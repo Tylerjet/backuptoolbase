@@ -13,7 +13,7 @@ init() {
 
     source "$parent_path"/.env
     source "$parent_path"/utils/utils.func
-    source "$parent_path"/utils/debug.func
+    [[ "$1" == "--debug" ]] && source "$parent_path"/utils/debug.func
 
     backup_folder="$branch_name-backup"
     backup_path="$HOME/$backup_folder"
