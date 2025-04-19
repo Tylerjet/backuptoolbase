@@ -200,6 +200,7 @@ cleanUp() {
 # === Main === #
 main() {
     init "$@"
+    [[ "$debug_output" == true ]] && source "$parent_path"/utils/debug.func
     commonDeps
     checkUpdates
     createBackupFolder
@@ -211,6 +212,3 @@ main() {
     pushCommit
     cleanUp
 }
-
-[[ "$debug_output" == true ]] && source "$parent_path"/utils/debug.func
-main "$@"
