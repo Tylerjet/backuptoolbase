@@ -193,7 +193,7 @@ removeOldInotify() {
 }
 
 begin_debug_line() {
-    echo -e "\n------------DEBUG:------------"
+    echo -e "------------DEBUG:------------"
 }
 
 end_debug_line() {
