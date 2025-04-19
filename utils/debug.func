@@ -14,18 +14,16 @@ for fn in "${functions_to_hook[@]}"; do
     fn_wrapper_file=$(mktemp)
 
     # 1) Dump the original function and rename it to ${fn}_original
-    declare -f "$fn" \
-      | sed "1s/^${fn}()/${fn}_original()/" \
-      > "$fn_def_file"
+    declare -f "$fn" | sed "1s/^$fn *()/${fn}_original()/" >"$fn_def_file"
 
     # 2) Build your wrapper that calls the renamed original + debug
     {
-      echo
-      echo "${fn}() {"
-      echo "  ${fn}_original \"\$@\""
-      echo "  debug_${fn} &"
-      echo "}"
-    } > "$fn_wrapper_file"
+        echo
+        echo "${fn}() {"
+        echo "  ${fn}_original \"\$@\""
+        echo "  debug_${fn} &"
+        echo "}"
+    } >"$fn_wrapper_file"
 
     # 3) Source them so both the _original and wrapper exist in your shell
     source "$fn_def_file"
