@@ -198,17 +198,15 @@ cleanUp() {
 }
 
 # === Main === #
-main() {
-    init "$@"
-    [[ "$debug_output" == true ]] && source "$parent_path"/utils/debug.func
-    commonDeps
-    checkUpdates
-    createBackupFolder
-    checkEnv
-    gotoHome
-    copyFiles
-    gotoBackupFolder
-    pre-commitCleanup
-    pushCommit
-    cleanUp
-}
+init "$@"
+[[ "$debug_output" == true ]] && source "$parent_path"/utils/debug.func
+commonDeps
+checkUpdates
+createBackupFolder
+checkEnv
+gotoHome
+copyFiles
+gotoBackupFolder
+pre-commitCleanup
+pushCommit
+cleanUp
