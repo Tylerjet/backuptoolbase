@@ -10,29 +10,26 @@ debug_checkUpdates() {
 }
 
 for fn in "${functions_to_hook[@]}"; do
-    # Get function definition and rename it
     fn_def_file=$(mktemp)
     fn_wrapper_file=$(mktemp)
 
-    # Export the original function definition
-    declare -f "$fn" > "$fn_def_file"
+    # Save the original function's definition and rename it
+    declare -f "$fn" | sed "s/^$fn()/$fn"_original"()/" >"$fn_def_file"
 
-    # Rename function to function_original
-    sed "s/^${fn}()/${fn}_original()/" "$fn_def_file" > "$fn_wrapper_file"
-
-    # Append a safe wrapper
+    # Define the wrapper
     {
-        echo ""
-        echo "${fn}() {"
+        echo ''
+        echo "$fn() {"
         echo "  ${fn}_original"
         echo "  debug_${fn} &"
-        echo "}"
-    } >> "$fn_wrapper_file"
+        echo '}'
+    } >"$fn_wrapper_file"
 
-    # Source the modified wrapper into current shell
+    # Source both definitions
+    source "$fn_def_file"
     source "$fn_wrapper_file"
 
-    #rm "$fn_def_file" "$fn_wrapper_file"
+    rm "$fn_def_file" "$fn_wrapper_file"
 done
 
 # Debug output: Show last command
