@@ -32,7 +32,7 @@ for fn in "${functions_to_hook[@]}"; do
     # Source the modified wrapper into current shell
     source "$fn_wrapper_file"
 
-    rm "$fn_def_file" "$fn_wrapper_file"
+    #rm "$fn_def_file" "$fn_wrapper_file"
 done
 
 # Debug output: Show last command
