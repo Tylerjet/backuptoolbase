@@ -31,7 +31,7 @@ for fn in "${functions_to_hook[@]}"; do
     source "$fn_def_file"
     source "$fn_wrapper_file"
 
-    rm -f "$fn_def_file" "$fn_wrapper_file"
+    #rm -f "$fn_def_file" "$fn_wrapper_file"
 done
 
 # Debug output: Show last command
