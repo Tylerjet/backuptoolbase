@@ -1,6 +1,6 @@
 #!/bin/bash
 
-functions_to_hook=("checkUpdates" "checkEnv" "createBackupPath")
+functions_to_hook=("checkUpdates" "checkEnv" "createBackupFolder")
 
 debug_checkUpdates() {
     debug_line 1 "Update"
