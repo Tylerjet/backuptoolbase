@@ -110,6 +110,15 @@ createBackupFolder() {
 }
 
 checkEnv() {
+    # # Check if .env is v1 version
+    # if [[ ! -v backupPaths ]]; then
+    #     echo ".env file is not using version 2 config, upgrading to V2"
+    #     if bash $parent_path/utils/v1convert.sh; then
+    #         echo "Upgrade complete restarting script.sh"
+    #         sleep 2.5
+    #         exec "$parent_path/script.sh" "$args"
+    #     fi
+    # fi
     # Check if username is defined in .env
     if [[ "$commit_username" != "" ]]; then
         git config user.name "$commit_username"
