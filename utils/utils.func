@@ -192,10 +192,17 @@ removeOldInotify() {
     done
 }
 
-begin_debug_line() {
-    echo -e "------------DEBUG:------------"
-}
-
-end_debug_line() {
-    echo -e "------------------------------\n"
+debug_line() {
+  case "$1" in
+  1)
+  echo -e "------------DEBUG:------------"
+  ;;
+  2)
+  echo -e "------------------------------\n"
+  ;;
+  3)
+  echo -e "------------------------------\n"
+  echo -e "------------DEBUG:------------"
+  ;;
+  esac
 }

@@ -1,12 +1,48 @@
 #!/bin/bash
 
-functions_to_hook=("checkUpdates")
+functions_to_hook=("checkUpdates" "checkEnv")
 
 debug_checkUpdates() {
-    begin_debug_line
+    debug_line 1
     echo -e "Running on branch: $(git -C "$parent_path" branch --show-current)"
     echo -e "Running on commit: $(git -C "$parent_path" rev-parse HEAD | cut -c1-7)"
-    end_debug_line
+    debug_line 2
+}
+
+debug_checkEnv() {
+    debug_line 1
+    if [[ "$SHELL" == */bash* ]]; then
+        echo -e "Command: $0 $args"
+    fi
+    debug_line 3
+    while IFS= read -r line; do
+        if [[ $line == github_token=* ]]; then
+            echo "github_token=****************"
+        else
+            echo "$line"
+        fi
+    done <$HOME/klipper-backup/.env
+    debug_line 2
+    if [[ $git_host == "github.com" ]]; then
+        debug_line 1
+        if curl -fsS "https://api.github.com/repos/${github_username}/${github_repository}" >/dev/null; then
+            echo "The GitHub repo ${github_username}/${github_repository} exists (public)"
+        else
+            echo "Error: no GitHub repo ${github_username}/${github_repository} found (maybe private)"
+        fi
+        debug_line 2
+    fi
+    debug_line 1
+    echo -e "\$HOME: $HOME"
+    debug_line 3
+    echo -e "List/Status of Klipper-Backup related systemd services:\n\n"
+    echo -e "klipper-backup-filewatch.service:\n"
+    systemctl status klipper-backup-filewatch.service | head -n 50
+    echo -e "\nklipper-backup-on-boot.service:\n"
+    systemctl status klipper-backup-on-boot.service | head -n 50
+    echo -e "\nklipper-backup.service:\n"
+    systemctl status klipper-backup.service | head -n 50
+    debug_line 2
 }
 
 for fn in "${functions_to_hook[@]}"; do
@@ -30,90 +66,3 @@ for fn in "${functions_to_hook[@]}"; do
 
     rm -f "$fn_def_file" "$fn_wrapper_file"
 done
-
-# Debug output: Show last command
-debug_lastcommand() {
-    begin_debug_line
-    if [[ "$SHELL" == */bash* ]]; then
-        echo -e "Command: $0 $args"
-    fi
-    end_debug_line
-}
-
-# Debug output: .env file with hidden token
-debug_envfile() {
-    begin_debug_line
-    while IFS= read -r line; do
-        if [[ $line == github_token=* ]]; then
-            echo "github_token=****************"
-        else
-            echo "$line"
-        fi
-    done <$HOME/$(basename $(git rev-parse --show-toplevel))/.env
-    end_debug_line
-}
-
-# Debug output: Check git repo
-debug_repocheck() {
-    if [[ $git_host == "github.com" ]]; then
-        begin_debug_line
-        if curl -fsS "https://api.github.com/repos/${github_username}/${github_repository}" >/dev/null; then
-            echo "The GitHub repo ${github_username}/${github_repository} exists (public)"
-        else
-            echo "Error: no GitHub repo ${github_username}/${github_repository} found (maybe private)"
-        fi
-        end_debug_line
-    fi
-}
-
-# Debug output: $HOME
-debug_homedir() {
-    begin_debug_line
-    echo -e "\$HOME: $HOME"
-    end_debug_line
-}
-
-# Debug output: $backup_path - (current) path and content
-debug_backuppathcurrent() {
-    begin_debug_line
-    echo -e "\$backup_path: $PWD"
-    echo -e "\nContent of \$backup_path:"
-    echo -ne "$(ls -la $backup_path)\n"
-    end_debug_line
-}
-
-# Debug output: $backup_path/.git/config content
-debug_gitconfig() {
-    begin_debug_line
-    echo -e "\$backup_path/.git/config:\n"
-    while IFS= read -r line; do
-        if [[ $line == *"url ="*@* ]]; then
-            masked_line=$(echo "$line" | sed -E 's/(url = https:\/\/)[^@]*(@.*)/\1********\2/')
-            echo "$masked_line"
-        else
-            echo "$line"
-        fi
-    done <"$backup_path/.git/config"
-    end_debug_line
-}
-
-# Debug output: $backup_path content after running rsync
-debug_backuppathafter() {
-    begin_debug_line
-    echo -e "Content of \$backup_path after rsync:"
-    echo -ne "$(ls -la $backup_path)\n"
-    end_debug_line
-}
-
-# Debug output: Systemd services
-debug_systemdservices() {
-    begin_debug_line
-    echo -e "List/Status of backuptoolbase related systemd services:\n\n"
-    echo -e "backuptoolbase-filewatch.service:\n"
-    systemctl status backuptoolbase-filewatch.service | head -n 50
-    echo -e "\nbackuptoolbase-on-boot.service:\n"
-    systemctl status backuptoolbase-on-boot.service | head -n 50
-    echo -e "\nbackuptoolbase.service:\n"
-    systemctl status backuptoolbase.service | head -n 50
-    end_debug_line
-}
