@@ -45,8 +45,8 @@ debug_checkEnv() {
     debug_line 2
 }
 
-debug_createBackupFolder
-{
+debug_createBackupFolder() {
+  echo "This is next"
 }
 
 for fn in "${functions_to_hook[@]}"; do
