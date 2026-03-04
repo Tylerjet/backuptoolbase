@@ -1,454 +1,328 @@
 #!/usr/bin/env bash
 trap 'stty echo; exit' SIGINT
 
-# === Initialization === #
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  -config, --config <path>   Path to config file.
+                             Default resolution: ./install.conf then ./.env
+  -h, --help                 Show this help
+EOF
+}
+
+is_true() {
+    local value
+    value=$(echo "${1:-false}" | tr '[:upper:]' '[:lower:]')
+    [[ "$value" == "1" || "$value" == "true" || "$value" == "yes" || "$value" == "y" || "$value" == "on" ]]
+}
+
+to_abs_path() {
+    local path
+    path="${1/#\~/$HOME}"
+    if [[ "$path" == /* ]]; then
+        printf "%s\n" "$path"
+        return
+    fi
+
+    if [[ -e "$path" ]]; then
+        (
+            cd "$(dirname "$path")"
+            printf "%s/%s\n" "$(pwd -P)" "$(basename "$path")"
+        )
+    else
+        printf "%s/%s\n" "$(pwd -P)" "$path"
+    fi
+}
+
+escape_sed_replacement() {
+    printf "%s" "$1" | sed -e 's/[\/&|]/\\&/g'
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -config | --config)
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                echo -e "${R}●${NC} Error: config path expected after $1"
+                exit 1
+            fi
+            config_path="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${R}●${NC} Unknown option: $1"
+            usage
+            exit 1
+            ;;
+        esac
+    done
+}
+
+load_defaults() {
+    install_dir=$(to_abs_path "${install_dir:-$HOME/backuptoolbase}")
+    repo_url="${repo_url:-https://github.com/Tylerjet/backuptoolbase.git}"
+    auto_update_repo="${auto_update_repo:-true}"
+
+    sync_config_to_install="${sync_config_to_install:-true}"
+    target_config_path=$(to_abs_path "${target_config_path:-$install_dir/.env}")
+    runtime_config_path="${runtime_config_path:-}"
+
+    install_filewatch_service="${install_filewatch_service:-false}"
+    install_on_boot_service="${install_on_boot_service:-false}"
+    install_cron="${install_cron:-false}"
+    install_inotify_tools="${install_inotify_tools:-true}"
+
+    cron_schedule="${cron_schedule:-0 */4 * * *}"
+    cron_commit_message="${cron_commit_message:-Cron backup}"
+
+    git_protocol="${git_protocol:-https}"
+    branch_name="${branch_name:-main}"
+    commit_username="${commit_username:-$(whoami)}"
+    commit_email="${commit_email:-$(whoami)@$(getHostnameShort)-$unique_id}"
+
+    if ! declare -p backupPaths >/dev/null 2>&1; then
+        backupPaths=()
+    fi
+}
+
+validate_config() {
+    if [[ -z "${github_repository:-}" || "$github_repository" == "REPOSITORY" ]]; then
+        echo -e "${R}●${NC} Missing required value: github_repository"
+        exit 1
+    fi
+
+    if [[ -z "${github_username:-}" || "$github_username" == "USERNAME" ]]; then
+        echo -e "${R}●${NC} Missing required value: github_username"
+        exit 1
+    fi
+
+    if [[ "$git_protocol" != "ssh" ]]; then
+        if [[ -z "${github_token:-}" || "$github_token" == "ghp_xxxxxxxxxxxxxxxx" ]]; then
+            echo -e "${R}●${NC} Missing required value: github_token (required unless git_protocol=ssh)"
+            exit 1
+        fi
+    fi
+
+    local has_backup_paths=false
+    local path
+    for path in "${backupPaths[@]}"; do
+        if [[ -n "$path" ]]; then
+            has_backup_paths=true
+            break
+        fi
+    done
+
+    if ! $has_backup_paths; then
+        echo -e "${Y}●${NC} Warning: backupPaths is empty, backups will include no files."
+    fi
+}
+
 init() {
     parent_path=$(
         cd "$(dirname "${BASH_SOURCE[0]}")"
         pwd -P
     )
 
-    if [[ ! -f .env ]]; then
-        cp $parent_path/.env.example $parent_path/.env
-    fi
-
-    source $parent_path/utils/utils.func
+    source "$parent_path/utils/utils.func"
     unique_id=$(getUniqueid)
-}
 
-# === Functions === #
-install_update() {
-    promptInstall=$(whiptail --title "$TITLE Install" --backtitle "$updateMsg" --noitem --default-item "Yes" --menu "Do you want to proceed with installation/(re)configuration?" 15 75 3 \
-        "Yes" "" \
-        "No" "" \
-        3>&1 1>&2 2>&3)
+    parse_args "$@"
 
-    if [ $? -ne 0 ]; then
-        #clear
-        echo -e "${R}●${NC} Installation aborted.\n"
+    if [[ -z "${config_path:-}" ]]; then
+        if [[ -f "$parent_path/install.conf" ]]; then
+            config_path="$parent_path/install.conf"
+        else
+            config_path="$parent_path/.env"
+        fi
+    fi
+
+    config_path=$(to_abs_path "$config_path")
+    if [[ ! -f "$config_path" ]]; then
+        echo -e "${R}●${NC} Config file not found: $config_path"
         exit 1
     fi
-    if [[ $promptInstall == "Yes" ]]; then
-        cd "$HOME"
-        if [ ! -d "backuptoolbase" ]; then
+
+    source "$config_path"
+    load_defaults
+    validate_config
+}
+
+install_or_update_repo() {
+    if [[ -d "$install_dir/.git" ]]; then
+        if is_true "$auto_update_repo"; then
+            echo -e "${Y}●${NC} Updating existing repository at $install_dir"
+            if git -C "$install_dir" pull --ff-only >/dev/null 2>&1; then
+                echo -e "${CL}${G}●${NC} Repository update ${G}Done!${NC}"
+            else
+                echo -e "${CL}${Y}●${NC} Repository update ${Y}Skipped${NC} (uncommitted or diverged changes)"
+            fi
+        else
+            echo -e "${M}●${NC} Repository update ${M}Skipped!${NC}"
+        fi
+    elif [[ -d "$install_dir" && -n "$(ls -A "$install_dir" 2>/dev/null)" ]]; then
+        echo -e "${R}●${NC} Install directory exists and is not empty: $install_dir"
+        echo -e "${R}●${NC} Refusing to clone into a non-empty non-git directory."
+        exit 1
+    else
+        echo -e "${Y}●${NC} Cloning repository to $install_dir"
+        mkdir -p "$(dirname "$install_dir")"
+        if git clone "$repo_url" "$install_dir" >/dev/null 2>&1; then
+            echo -e "${CL}${G}●${NC} Repository clone ${G}Done!${NC}"
+        else
+            echo -e "${CL}${R}●${NC} Repository clone ${R}Failed!${NC}"
+            exit 1
+        fi
+    fi
+
+    chmod +x "$install_dir/script.sh" "$install_dir/install.sh" "$install_dir/utils/filewatch.sh" 2>/dev/null || true
+}
+
+prepare_runtime_config() {
+    if is_true "$sync_config_to_install"; then
+        mkdir -p "$(dirname "$target_config_path")"
+        if [[ "$config_path" != "$target_config_path" ]]; then
+            cp "$config_path" "$target_config_path"
+        fi
+        runtime_config_path="${runtime_config_path:-$target_config_path}"
+        echo -e "${G}●${NC} Synced config to $target_config_path"
+    else
+        runtime_config_path="${runtime_config_path:-$config_path}"
+        echo -e "${M}●${NC} Config sync ${M}Skipped${NC}; using $runtime_config_path directly."
+    fi
+
+    runtime_config_path=$(to_abs_path "$runtime_config_path")
+    if [[ ! -f "$runtime_config_path" ]]; then
+        echo -e "${R}●${NC} Runtime config file not found: $runtime_config_path"
+        exit 1
+    fi
+}
+
+install_inotify_tools_if_needed() {
+    if command -v inotifywait >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo -e "${Y}●${NC} Installing inotify-tools"
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update >/dev/null 2>&1
+        sudo apt-get install -y inotify-tools >/dev/null 2>&1
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y inotify-tools >/dev/null 2>&1
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --noconfirm inotify-tools >/dev/null 2>&1
+    elif command -v apk >/dev/null 2>&1; then
+        sudo apk add inotify-tools >/dev/null 2>&1
+    else
+        echo -e "${R}●${NC} Unsupported package manager. Please install inotify-tools manually."
+        return 1
+    fi
+
+    if command -v inotifywait >/dev/null 2>&1; then
+        echo -e "${CL}${G}●${NC} Installing inotify-tools ${G}Done!${NC}"
+    else
+        echo -e "${R}●${NC} Failed to install inotify-tools."
+        return 1
+    fi
+}
+
+install_filewatch_service_func() {
+    if is_true "$install_filewatch_service"; then
+        if is_true "$install_inotify_tools"; then
+            install_inotify_tools_if_needed || exit 1
+        fi
+
+        local service_file="/etc/systemd/system/backuptoolbase-filewatch.service"
+        local template_file="$install_dir/install-files/backuptoolbase-filewatch.service"
+        local exec_start
+        local escaped_exec_start
+
+        exec_start="/usr/bin/env bash \"$install_dir/utils/filewatch.sh\" -config \"$runtime_config_path\""
+        escaped_exec_start=$(escape_sed_replacement "$exec_start")
+
+        sudo systemctl stop backuptoolbase-filewatch.service >/dev/null 2>&1 || true
+        sudo cp "$template_file" "$service_file"
+        sudo sed -i "s/^After=.*/After=$(wantsafter)/" "$service_file"
+        sudo sed -i "s/^Wants=.*/Wants=$(wantsafter)/" "$service_file"
+        sudo sed -i "s/^User=.*/User=${SUDO_USER:-$USER}/" "$service_file"
+        sudo sed -i "s|^ExecStart=.*|ExecStart=$escaped_exec_start|" "$service_file"
+        sudo systemctl daemon-reload >/dev/null 2>&1
+        sudo systemctl enable backuptoolbase-filewatch.service >/dev/null 2>&1
+        sudo systemctl start backuptoolbase-filewatch.service >/dev/null 2>&1
+        echo -e "${G}●${NC} Installing filewatch service ${G}Done!${NC}"
+    else
+        echo -e "${M}●${NC} Installing filewatch service ${M}Skipped!${NC}"
+    fi
+}
+
+install_backup_service_func() {
+    if is_true "$install_on_boot_service"; then
+        local service_file="/etc/systemd/system/backuptoolbase-on-boot.service"
+        local template_file="$install_dir/install-files/backuptoolbase-on-boot.service"
+        local exec_start
+        local escaped_exec_start
+
+        exec_start="/usr/bin/env bash \"$install_dir/script.sh\" -config \"$runtime_config_path\" -c \"New Backup on boot\""
+        escaped_exec_start=$(escape_sed_replacement "$exec_start")
+
+        sudo systemctl stop backuptoolbase-on-boot.service >/dev/null 2>&1 || true
+        sudo cp "$template_file" "$service_file"
+        sudo sed -i "s/^After=.*/After=$(wantsafter)/" "$service_file"
+        sudo sed -i "s/^Wants=.*/Wants=$(wantsafter)/" "$service_file"
+        sudo sed -i "s/^User=.*/User=${SUDO_USER:-$USER}/" "$service_file"
+        sudo sed -i "s|^ExecStart=.*|ExecStart=$escaped_exec_start|" "$service_file"
+        sudo systemctl daemon-reload >/dev/null 2>&1
+        sudo systemctl enable backuptoolbase-on-boot.service >/dev/null 2>&1
+        sudo systemctl start backuptoolbase-on-boot.service >/dev/null 2>&1
+        echo -e "${G}●${NC} Installing on-boot service ${G}Done!${NC}"
+    else
+        echo -e "${M}●${NC} Installing on-boot service ${M}Skipped!${NC}"
+    fi
+}
+
+install_cron_func() {
+    if is_true "$install_cron"; then
+        local cron_commit_message_escaped
+        local cron_entry
+        local existing_cron
+        local filtered_cron
+
+        cron_commit_message_escaped=${cron_commit_message//\"/\\\"}
+        cron_entry="$cron_schedule /usr/bin/env bash \"$install_dir/script.sh\" -config \"$runtime_config_path\" -c \"$cron_commit_message_escaped\""
+
+        existing_cron=$(crontab -l 2>/dev/null || true)
+        filtered_cron=$(printf "%s\n" "$existing_cron" | grep -vF "$install_dir/script.sh" || true)
+
+        if [[ -n "$filtered_cron" ]]; then
             {
-                echo 20
-                sleep 0.1
-                git clone https://github.com/Tylerjet/backuptoolbase.git 2>/dev/null
-                echo 50
-                sleep 0.1
-                chmod +x ./backuptoolbase/script.sh
-                echo 70
-                sleep 0.1
-                cp ./backuptoolbase/.env.example ./backuptoolbase/.env
-                echo 90
-                sleep 0.1
-                echo 100
-                sleep 0.3
-            } | whiptail --title "$TITLE Install" --backtitle "$updateMsg" --guage "Installing backuptoolbase" 8 50 0
+                printf "%s\n" "$filtered_cron"
+                printf "%s\n" "$cron_entry"
+            } | crontab -
         else
-            check_updates
+            printf "%s\n" "$cron_entry" | crontab -
         fi
+
+        echo -e "${G}●${NC} Installing cron task ${G}Done!${NC}"
     else
-        #clear
-        echo -e "${R}●${NC} Installation aborted.\n"
-        exit 1
+        echo -e "${M}●${NC} Installing cron task ${M}Skipped!${NC}"
     fi
-}
-
-check_updates() {
-    cd ~/backuptoolbase
-    if [ "$(git rev-parse HEAD)" = "$(git ls-remote $(git rev-parse --abbrev-ref @{u} | sed 's/\// /g') | cut -f1)" ]; then
-        updateMsg="● backuptoolbase is up to date."
-    else
-        updateMsg="● Update for backuptoolbase Available!"
-        promptUpdate=$(whiptail --title "$TITLE Install" --backtitle "$updateMsg" --noitem --default-item "Yes" --menu "Proceed with update?" 15 75 3 \
-            "Yes" "" \
-            "No" "" \
-            3>&1 1>&2 2>&3)
-
-        if [[ $promptUpdate == "Yes" ]]; then
-            update_progress() {
-                local progress=0
-                while [ $progress -lt 100 ]; do
-                    echo $progress
-                    sleep 0.5
-                    progress=$((progress + 10))
-                done
-            }
-
-            update_progress | whiptail --title "$TITLE Install" --backtitle "$updateMsg" --gauge "Updating backuptoolbase" 8 50 0
-            progress_pid=$!
-
-            if git pull >/dev/null 2>&1; then
-                kill $progress_pid 2>/dev/null
-                echo 100 | whiptail --title "$TITLE Install" --backtitle "$updateMsg" --gauge "Updating backuptoolbase Done!\n Restarting script..." 8 50 0
-                sleep 1
-                exec $parent_path/install.sh
-            else
-                kill $progress_pid 2>/dev/null
-                whiptail --title "$TITLE Install" --backtitle "$updateMsg" --infobox "Error Updating backuptoolbase: Repository is dirty running git reset --hard then restarting script"
-                sleep 1
-                git reset --hard 2>/dev/null
-                exec $parent_path/install.sh
-            fi
-        else
-            whiptail --title "$TITLE Install" --msgbox "backuptoolbase update Skipped!" 10 78
-        fi
-    fi
-}
-
-configure() {
-    if grep -q "github_token=ghp_xxxxxxxxxxxxxxxx" "$parent_path"/.env; then # Check if the github token still matches the value when initially copied from .env.example
-        message="Do you want to proceed with configuring the backuptoolbase .env?"
-    else
-        message="Do you want to proceed with reconfiguring the backuptoolbase .env?"
-    fi
-
-    configResult=$(whiptail --title "$TITLE Install" --noitem --default-item "Yes" --menu "$message" 15 75 3 \
-        "Yes" "" \
-        "No" "" \
-        3>&1 1>&2 2>&3)
-
-    if [[ $configResult == "Yes" ]]; then
-        whiptail --title "$TITLE Install" --msgbox "See the following for how to create your token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" 10 78
-        while true; do
-            if [ -z $ghtoken ]; then
-                ghtoken=$(whiptail --title "$TITLE Install" --passwordbox "Enter your Github token:" 10 76 "" 3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset ghtoken
-                    continue
-                    ;;
-                back)
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-                if [ -z "$ghtoken" ]; then
-                    whiptail --msgbox "GitHub token cannot be empty!" 10 50
-                    continue
-                fi
-                ghusername=$(getUsername "$ghtoken")
-                if [ -z "$ghusername" ] || [ $ghusername -eq 1 ]; then
-                    whiptail --msgbox "Invalid GitHub token or unable to contact GitHub API. Please check your connection and try again!" 10 76
-                    unset ghtoken
-                    continue
-                fi
-                sed -i "s/^github_token=.*/github_token=$ghtoken/" "$HOME/backuptoolbase/.env"
-                sed -i "s/^github_username=.*/github_username=$ghusername/" "$HOME/backuptoolbase/.env"
-            fi
-            if [ -z $ghrepo ]; then
-                ghrepo=$(whiptail --title "$TITLE Install" --inputbox "Enter your repository name:" 10 50 "" 3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset ghrepo
-                    continue
-                    ;;
-                back)
-                    unset ghtoken
-                    unset ghrepo
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-                if [ -z "$ghrepo" ]; then
-                    whiptail --msgbox "Repository name cannot be empty!" 10 50
-                    continue
-                fi
-                sed -i "s/^github_repository=.*/github_repository=$ghrepo/" "$HOME/backuptoolbase/.env"
-            fi
-            if [ -z $ghbranch ]; then
-                ghbranch=$(whiptail --title "$TITLE Install" --inputbox "Enter your desired branch name:" 10 50 "main" 3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset ghbranch
-                    continue
-                    ;;
-                back)
-                    unset ghrepo
-                    unset ghbranch
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-                if [ -z "$ghbranch" ]; then
-                    whiptail --msgbox "Branch name cannot be empty!" 10 50
-                    continue
-                fi
-                sed -i "s/^branch_name=.*/branch_name=\"$ghbranch\"/" "$HOME/backuptoolbase/.env"
-            fi
-            if [ -z $commitname ]; then
-                commitname=$(whiptail --title "$TITLE Install" --inputbox "Enter your desired git commit username:" 10 50 "$(whoami)" 3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset commitname
-                    continue
-                    ;;
-                back)
-                    unset ghbranch
-                    unset commitname
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-                if [ -z "$commitname" ]; then
-                    whiptail --msgbox "Git commit username cannot be empty!" 10 50
-                    continue
-                fi
-                sed -i "s/^commit_username=.*/commit_username=\"$commitname\"/" "$HOME/backuptoolbase/.env"
-            fi
-            if [ -z $commitemail ]; then
-                commitemail=$(whiptail --title "$TITLE Install" --inputbox "Enter your desired git commit email:" 10 50 "$(whoami)@$(hostname --short)-$unique_id" 3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset commitemail
-                    continue
-                    ;;
-                back)
-                    unset commitname
-                    unset commitemail
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-                if [ -z "$commitemail" ]; then
-                    whiptail --msgbox "Git commit email cannot be empty!" 10 50
-                    continue
-                fi
-                sed -i "s/^commit_email=.*/commit_email=\"$commitemail\"/" "$HOME/backuptoolbase/.env"
-            fi
-            echo -e "${UL}${BOLD}${G}$TITLE Install${NC}"
-            echo -e "${CL}${G}●${NC} Configuration ${G}Done!${NC}"
-            break
-        done
-    else
-        echo -e "${UL}${BOLD}${G}$TITLE Install${NC}"
-        echo -e "${CL}${M}●${NC} Configuration ${M}Skipped!${NC}"
-    fi
-}
-
-promptOptional() {
-    while true; do
-        if [ -z $installFilewatch ]; then
-            if service_exists backuptoolbase-filewatch; then
-                filewatchPrompt="Would you like to reinstall the filewatch backup service? (this will trigger a backup after changes are detected)"
-            else
-                filewatchPrompt="Would you like to install the filewatch backup service? (this will trigger a backup after changes are detected)"
-            fi
-            installFilewatch=$(whiptail --title "$TITLE Install" --noitem --default-item "Yes" --menu "$filewatchPrompt" 15 75 3 \
-                "Yes" "" \
-                "No" "" \
-                3>&1 1>&2 2>&3)
-            check=$(checkExit $?)
-            case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-            redo)
-                unset installFilewatch
-                continue
-                ;;
-            back)
-                unset installFilewatch
-                unset moonrakerManager
-                continue
-                ;;
-            quit) exit 1 ;;
-            esac
-        fi
-        if [ -z $installService ]; then
-            if service_exists backuptoolbase-on-boot; then
-                servicePrompt="Would you like to reinstall the on-boot backup service?"
-            else
-                servicePrompt="Would you like to install the on-boot backup service?"
-            fi
-            installService=$(whiptail --title "$TITLE Install" --noitem --default-item "Yes" --menu "$servicePrompt" 15 75 3 \
-                "Yes" "" \
-                "No" "" \
-                3>&1 1>&2 2>&3)
-            check=$(checkExit $?)
-            case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-            redo)
-                unset installService
-                continue
-                ;;
-            back)
-                unset installService
-                unset installFilewatch
-                continue
-                ;;
-            quit) exit 1 ;;
-            esac
-        fi
-        if [ -z $installCron ]; then
-            if ! (crontab -l 2>/dev/null | grep -q "$HOME/backuptoolbase/script.sh"); then
-                installCron=$(whiptail --title "$TITLE Install" --noitem --default-item "Yes" --menu "Would you like to install the cron task? (automatic backup every 4 hours)" 15 75 3 \
-                    "Yes" "" \
-                    "No" "" \
-                    3>&1 1>&2 2>&3)
-                check=$(checkExit $?)
-                case "$(echo "$check" | tr '[:upper:]' '[:lower:]')" in
-                redo)
-                    unset installCron
-                    continue
-                    ;;
-                back)
-                    unset installCron
-                    unset installService
-                    continue
-                    ;;
-                quit) exit 1 ;;
-                esac
-            else
-                cronMsg="${CL}${M}●${NC} Installing cron task ${M}Skipped! (Already Installed)${NC}"
-            fi
-        fi
-        break
-    done
-}
-
-install_filewatch_service() {
-    if [[ $installFilewatch == "Yes" ]]; then
-        if ! checkinotify >/dev/null 2>&1; then # Checks if the version of inotify installed matches the latest release
-            removeOldInotify
-            echo -e "${Y}●${NC} Installing latest version of inotify-tools (This may take a few minutes)"
-            sudo rm -rf inotify-tools/                              # remove folder incase it for some reason still exists
-            sudo rm -f /usr/bin/fsnotifywait /usr/bin/fsnotifywatch # remove symbolic links to keep error about file exists from occurring
-            loading_wheel "${TAB}${Y}●${NC} Clone inotify-tools repo" &
-            loading_pid=$!
-            git clone https://github.com/inotify-tools/inotify-tools.git 2>/dev/null
-            kill $loading_pid
-            echo -e "${CL}${TAB}${G}●${NC} Clone inotify-tools repo ${G}Done!${NC}"
-            sudo apt-get install autoconf autotools-dev automake libtool -y >/dev/null 2>&1
-
-            cd inotify-tools/
-
-            buildCommands=("./autogen.sh" "./configure --prefix=/usr" "make" "make install")
-            for ((i = 0; i < ${#buildCommands[@]}; i++)); do
-                run_command "${buildCommands[i]}"
-            done
-
-            cd ..
-            sudo rm -rf inotify-tools
-            echo -e "${CL}${G}●${NC} Installing latest version of inotify-tools ${G}Done!${NC}"
-        fi
-        loading_wheel "${Y}●${NC} Installing filewatch service" &
-        loading_pid=$!
-        if (
-            !(
-            sudo systemctl stop backuptoolbase-filewatch.service 2>/dev/null
-            sudo cp $parent_path/install-files/backuptoolbase-filewatch.service /etc/systemd/system/backuptoolbase-filewatch.service
-            sudo sed -i "s/^After=.*/After=$(wantsafter)/" "/etc/systemd/system/backuptoolbase-filewatch.service"
-            sudo sed -i "s/^Wants=.*/Wants=$(wantsafter)/" "/etc/systemd/system/backuptoolbase-filewatch.service"
-            sudo sed -i "s/^User=.*/User=${SUDO_USER:-$USER}/" "/etc/systemd/system/backuptoolbase-filewatch.service"
-            sudo systemctl daemon-reload 2>/dev/null
-            sudo systemctl enable backuptoolbase-filewatch.service 2>/dev/null
-            sudo systemctl start backuptoolbase-filewatch.service 2>/dev/null
-            sleep .5
-            kill $loading_pid
-        ) &
-
-            start_time=$(date +%s)
-            timeout_duration=20
-
-            while [ "$(ps -p $! -o comm=)" ]; do
-                # Calculate elapsed time
-                end_time=$(date +%s)
-                elapsed_time=$((end_time - start_time))
-
-                # Check if the timeout has been reached
-                if [ $elapsed_time -gt $timeout_duration ]; then
-                    echo -e "${CL}${R}●${NC} Installing filewatch service took to long to complete!"
-                    kill $!
-                    kill $loading_pid
-                    exit 1
-                fi
-
-                sleep 1
-            done
-        ); then
-            echo -e "${CL}${G}●${NC} Installing filewatch service ${G}Done!${NC}"
-        fi
-    else
-        echo -e "${CL}${M}●${NC} Installing filewatch service ${M}Skipped!${NC}"
-    fi
-}
-
-install_backup_service() {
-    if [[ $installService == "Yes" ]]; then
-        loading_wheel "${Y}●${NC} Installing on-boot service" &
-        loading_pid=$!
-        if (
-            !(
-            sudo systemctl stop backuptoolbase-on-boot.service 2>/dev/null
-            sudo cp $parent_path/install-files/backuptoolbase-on-boot.service /etc/systemd/system/backuptoolbase-on-boot.service
-            sudo sed -i "s/^After=.*/After=$(wantsafter)/" "/etc/systemd/system/backuptoolbase-on-boot.service"
-            sudo sed -i "s/^Wants=.*/Wants=$(wantsafter)/" "/etc/systemd/system/backuptoolbase-on-boot.service"
-            sudo sed -i "s/^User=.*/User=${SUDO_USER:-$USER}/" "/etc/systemd/system/backuptoolbase-on-boot.service"
-            sudo systemctl daemon-reload 2>/dev/null
-            sudo systemctl enable backuptoolbase-on-boot.service 2>/dev/null
-            sudo systemctl start backuptoolbase-on-boot.service 2>/dev/null
-            kill $loading_pid
-        ) &
-
-            start_time=$(date +%s)
-            timeout_duration=30
-
-            while [ "$(ps -p $! -o comm=)" ]; do
-                # Calculate elapsed time
-                end_time=$(date +%s)
-                elapsed_time=$((end_time - start_time))
-
-                # Check if the timeout has been reached
-                if [ $elapsed_time -gt $timeout_duration ]; then
-                    echo -e "${CL}${R}●${NC} Installing on-boot service took to long to complete!"
-                    kill $!
-                    kill $loading_pid
-                    exit 1
-                fi
-
-                sleep 1
-            done
-        ); then
-            echo -e "${CL}${G}●${NC} Installing on-boot service ${G}Done!${NC}"
-        fi
-    else
-        echo -e "${CL}${M}●${NC} Installing on-boot service ${M}Skipped!${NC}"
-    fi
-}
-
-install_cron() {
-    if [[ $installCron == "Yes" ]]; then
-        loading_wheel "${Y}●${NC} Installing cron task" &
-        loading_pid=$!
-        (
-            crontab -l 2>/dev/null
-            echo "0 */4 * * * $HOME/backuptoolbase/script.sh -c \"Cron backup - \$(date +'\\%x - \\%X')\""
-        ) | crontab -
-        sleep .5
-        kill $loading_pid
-        cronMsg="${CL}${G}●${NC} Installing cron task ${G}Done!${NC}"
-    else
-        cronMsg="${CL}${M}●${NC} Installing cron task ${M}Skipped!${NC}"
-    fi
-    echo -e "$cronMsg"
 }
 
 # === Main === #
 {
-    clear
+    init "$@"
     sudo -v
-    init
     commonDeps
-    clear
-    install_update
-    configure
-    promptOptional
-    install_filewatch_service
-    install_backup_service
-    install_cron
-    echo -e "${G}●${NC} Installation Complete!\n"
+    install_or_update_repo
+    prepare_runtime_config
+    install_filewatch_service_func
+    install_backup_service_func
+    install_cron_func
+    echo -e "${G}●${NC} Installation Complete!"
+    echo -e "${G}●${NC} Runtime config: $runtime_config_path\n"
 }

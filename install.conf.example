@@ -1,0 +1,57 @@
+# ============================================================
+# Installer options (used by install.sh)
+# ============================================================
+install_dir="$HOME/backuptoolbase"
+repo_url="https://github.com/Tylerjet/backuptoolbase.git"
+auto_update_repo=true
+
+# When true, this config is copied to target_config_path and used at runtime.
+sync_config_to_install=true
+target_config_path="$HOME/backuptoolbase/.env"
+
+# Optional override. Leave empty to use target_config_path when syncing,
+# or this file when sync_config_to_install=false.
+runtime_config_path=""
+
+install_filewatch_service=false
+install_on_boot_service=false
+install_cron=false
+install_inotify_tools=true
+
+cron_schedule="0 */4 * * *"
+cron_commit_message="Cron backup"
+
+# ============================================================
+# Backup runtime options (used by script.sh + filewatch.sh)
+# ============================================================
+github_token=ghp_xxxxxxxxxxxxxxxx
+github_username=USERNAME
+github_repository=REPOSITORY
+branch_name=main
+commit_username=""
+commit_email=""
+
+# Backup paths
+# script.sh searches from $HOME
+backupPaths=( \
+"Documents/*" \
+)
+
+# Git ignore patterns for files not uploaded to remote
+exclude=( \
+"*.swp" \
+"*.tmp" \
+"*.bak" \
+"*.bkp" \
+"*.csv" \
+"*.zip" \
+)
+
+# Additional inotify exclude regex patterns separated by "|"
+extraFilewatchExclude=""
+
+# Optional runtime behavior
+allow_empty_commits=false
+git_protocol="https"
+git_host="github.com"
+ssh_user="git"

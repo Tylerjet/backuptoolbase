@@ -30,6 +30,16 @@ getUniqueid() {
     echo $(date +%s%N | md5sum | head -c 7)
 }
 
+getHostnameShort() {
+    if hostname -s >/dev/null 2>&1; then
+        hostname -s
+    elif hostname --short >/dev/null 2>&1; then
+        hostname --short
+    else
+        hostname
+    fi
+}
+
 wantsafter() {
     if dpkg -l | grep -q '^ii.*network-manager' && systemctl is-active --quiet "NetworkManager"; then
         echo "NetworkManager-wait-online.service"

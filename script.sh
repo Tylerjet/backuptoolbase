@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# === Usage === #
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  -config, --config <path>         Path to config file (default: $parent_path/.env)
+  -c, --commit_message <message>   Commit message to use for this run
+  -d, --debug                      Enable debug output
+  -f, --fix                        Run fix routine
+  -h, --help                       Show this help
+EOF
+}
+
 # === Initialization === #
 init() {
     # set dotglob so that bash treats hidden files/folders starting with . correctly when copying them
@@ -11,7 +25,36 @@ init() {
         pwd -P
     )
 
-    source "$parent_path"/.env
+    config_path="$parent_path/.env"
+    original_args=("$@")
+
+    # Parse config path first so we know which file to source for runtime values.
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        -config | --config)
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                echo "Error: config path expected after $1" >&2
+                exit 1
+            fi
+            config_path="${2/#\~/$HOME}"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+        esac
+    done
+
+    if [[ ! -f "$config_path" ]]; then
+        echo "Error: config file not found: $config_path" >&2
+        exit 1
+    fi
+
+    source "$config_path"
     source "$parent_path"/utils/utils.func
 
     backup_folder="$branch_name-backup"
@@ -29,11 +72,13 @@ init() {
     exclude=${exclude:-"*.swp" "*.tmp" "*.bak" "*.bkp" "*.csv" "*.zip"}
     commit_message_used=false
     debug_output=false
-    args="$@"
-
     # Check parameters
+    set -- "${original_args[@]}"
     while [[ $# -gt 0 ]]; do
         case "$1" in
+        -config | --config)
+            shift 2
+            ;;
         -f | --fix)
             fix
             shift
@@ -52,8 +97,13 @@ init() {
             debug_output=true
             shift
             ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
         *)
             echo -e "${CL}${R}Unknown option: $1${NC}"
+            usage
             exit 1
             ;;
         esac
@@ -124,7 +174,6 @@ checkEnv() {
         git config user.name "$commit_username"
     else
         git config user.name "$(whoami)"
-        sed -i "s/^commit_username=.*/commit_username=\"$(whoami)\"/" "$parent_path"/.env
     fi
 
     # Check if email is defined in .env
@@ -132,9 +181,8 @@ checkEnv() {
         git config user.email "$commit_email"
     else
         unique_id=$(date +%s%N | md5sum | head -c 7)
-        user_email=$(whoami)@$(hostname --short)-$unique_id
+        user_email=$(whoami)@$(getHostnameShort)-$unique_id
         git config user.email "$user_email"
-        sed -i "s/^commit_email=.*/commit_email=\"$user_email\"/" "$parent_path"/.env
     fi
 }
 

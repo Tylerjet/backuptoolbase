@@ -8,7 +8,23 @@ Backup Tool Base is a simple tool that I got the idea from my assisting of klipp
 git clone https://github.com/Tylerjet/backuptoolbase
 ```
 
-### Installation/Configuration:
+### Create Config:
 ```shell
-~/backuptoolbase/install.sh
+cp ~/backuptoolbase/install.conf.example ~/backuptoolbase/install.conf
+# Edit install.conf with your values
+```
+
+### Run Installer (non-interactive):
+```shell
+~/backuptoolbase/install.sh -config ~/backuptoolbase/install.conf
+```
+
+## Run Backup Manually
+```shell
+~/backuptoolbase/script.sh -config ~/backuptoolbase/install.conf
+```
+
+### Optional Commit Message
+```shell
+~/backuptoolbase/script.sh -config ~/backuptoolbase/install.conf -c "Manual backup"
 ```
