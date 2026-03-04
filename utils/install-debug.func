@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+install_debug_mask_line() {
+    local line="$1"
+    local key="${line%%=*}"
+    case "$key" in
+    github_token | *token* | *secret* | *password*)
+        echo "${key}=********"
+        ;;
+    *)
+        echo "$line"
+        ;;
+    esac
+}
+
+install_debug_bool() {
+    if is_true "$1"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+debug_install_context() {
+    debug_line 1 "Install Invocation"
+    local quoted_args=()
+    local arg
+
+    for arg in "${original_args[@]}"; do
+        quoted_args+=("$(printf "%q" "$arg")")
+    done
+
+    echo "Command: $(printf "%q" "$0") ${quoted_args[*]}"
+    echo "Config path: $config_path"
+
+    debug_line 3 "Config Preview"
+    if [[ -f "$config_path" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+                echo "$line"
+            else
+                install_debug_mask_line "$line"
+            fi
+        done <"$config_path"
+    else
+        echo "Config file not found."
+    fi
+    debug_line 2
+}
+
+debug_load_defaults() {
+    debug_line 1 "Resolved Defaults"
+    echo "install_dir: $install_dir"
+    echo "repo_url: $repo_url"
+    echo "auto_update_repo: $(install_debug_bool "$auto_update_repo")"
+    echo "sync_config_to_install: $(install_debug_bool "$sync_config_to_install")"
+    echo "target_config_path: $target_config_path"
+    echo "runtime_config_path(raw): ${runtime_config_path:-<empty>}"
+    echo "install_filewatch_service: $(install_debug_bool "$install_filewatch_service")"
+    echo "install_on_boot_service: $(install_debug_bool "$install_on_boot_service")"
+    echo "install_cron: $(install_debug_bool "$install_cron")"
+    echo "install_inotify_tools: $(install_debug_bool "$install_inotify_tools")"
+    echo "cron_schedule: $cron_schedule"
+    echo "cron_commit_message: $cron_commit_message"
+    echo "git_protocol: $git_protocol"
+    echo "git_host: ${git_host:-github.com}"
+    echo "branch_name: $branch_name"
+    echo "commit_username: ${commit_username:-<empty>}"
+    echo "commit_email: ${commit_email:-<empty>}"
+    echo "backup paths count: ${#backupPaths[@]}"
+    debug_line 2
+}
+
+debug_validate_config() {
+    debug_line 1 "Validation Summary"
+    echo "github_username set: $( [[ -n "${github_username:-}" && "$github_username" != "USERNAME" ]] && echo yes || echo no )"
+    echo "github_repository set: $( [[ -n "${github_repository:-}" && "$github_repository" != "REPOSITORY" ]] && echo yes || echo no )"
+    if [[ "$git_protocol" == "ssh" ]]; then
+        echo "github_token required: no (ssh mode)"
+    else
+        echo "github_token required: yes"
+        echo "github_token set: $( [[ -n "${github_token:-}" && "$github_token" != "ghp_xxxxxxxxxxxxxxxx" ]] && echo yes || echo no )"
+    fi
+
+    local non_empty_paths=0
+    local path
+    for path in "${backupPaths[@]}"; do
+        [[ -n "$path" ]] && non_empty_paths=$((non_empty_paths + 1))
+    done
+    echo "non-empty backup paths: $non_empty_paths"
+    debug_line 2
+}
+
+debug_commonDeps() {
+    debug_line 1 "Dependency Check"
+    local dep
+    for dep in git jq curl rsync; do
+        if command -v "$dep" >/dev/null 2>&1; then
+            echo "$dep: installed"
+        else
+            echo "$dep: missing"
+        fi
+    done
+    debug_line 2
+}
+
+debug_install_or_update_repo() {
+    debug_line 1 "Repository State"
+    echo "install_dir exists: $( [[ -d "$install_dir" ]] && echo yes || echo no )"
+    echo ".git exists: $( [[ -d "$install_dir/.git" ]] && echo yes || echo no )"
+    if [[ -d "$install_dir/.git" ]]; then
+        echo "branch: $(git -C "$install_dir" branch --show-current 2>/dev/null || echo unknown)"
+        echo "head: $(git -C "$install_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        echo "origin: $(git -C "$install_dir" remote get-url origin 2>/dev/null | sed -E 's#(https?://)[^/@]+@#\1***@#')"
+    fi
+    debug_line 2
+}
+
+debug_prepare_runtime_config() {
+    debug_line 1 "Runtime Config"
+    echo "source config_path: $config_path"
+    echo "target_config_path: $target_config_path"
+    echo "runtime_config_path: $runtime_config_path"
+    echo "runtime config exists: $( [[ -f "$runtime_config_path" ]] && echo yes || echo no )"
+    if [[ -f "$runtime_config_path" ]]; then
+        ls -l "$runtime_config_path"
+    fi
+    debug_line 2
+}
+
+debug_install_inotify_tools_if_needed() {
+    debug_line 1 "inotify-tools"
+    if command -v inotifywait >/dev/null 2>&1; then
+        echo "inotifywait: $(inotifywait --version 2>/dev/null | head -n1)"
+    else
+        echo "inotifywait: missing"
+    fi
+    debug_line 2
+}
+
+debug_install_filewatch_service_func() {
+    debug_line 1 "Filewatch Service"
+    echo "enabled in config: $(install_debug_bool "$install_filewatch_service")"
+    local service_file="/etc/systemd/system/backuptoolbase-filewatch.service"
+    if [[ -f "$service_file" ]]; then
+        echo "service file: $service_file"
+        grep -E '^(User|ExecStart|After|Wants)=' "$service_file" || true
+        if command -v systemctl >/dev/null 2>&1; then
+            echo "active: $(systemctl is-active backuptoolbase-filewatch.service 2>/dev/null || echo unknown)"
+            echo "enabled: $(systemctl is-enabled backuptoolbase-filewatch.service 2>/dev/null || echo unknown)"
+        fi
+    else
+        echo "service file not present."
+    fi
+    debug_line 2
+}
+
+debug_install_backup_service_func() {
+    debug_line 1 "On-Boot Service"
+    echo "enabled in config: $(install_debug_bool "$install_on_boot_service")"
+    local service_file="/etc/systemd/system/backuptoolbase-on-boot.service"
+    if [[ -f "$service_file" ]]; then
+        echo "service file: $service_file"
+        grep -E '^(User|ExecStart|After|Wants)=' "$service_file" || true
+        if command -v systemctl >/dev/null 2>&1; then
+            echo "active: $(systemctl is-active backuptoolbase-on-boot.service 2>/dev/null || echo unknown)"
+            echo "enabled: $(systemctl is-enabled backuptoolbase-on-boot.service 2>/dev/null || echo unknown)"
+        fi
+    else
+        echo "service file not present."
+    fi
+    debug_line 2
+}
+
+debug_install_cron_func() {
+    debug_line 1 "Cron"
+    echo "enabled in config: $(install_debug_bool "$install_cron")"
+    if command -v crontab >/dev/null 2>&1; then
+        local matching
+        matching=$(crontab -l 2>/dev/null | grep -F "$install_dir/script.sh" || true)
+        if [[ -n "$matching" ]]; then
+            echo "matching cron entries:"
+            echo "$matching"
+        else
+            echo "matching cron entries: none"
+        fi
+    else
+        echo "crontab command unavailable."
+    fi
+    debug_line 2
+}
+
+install_debug_wrap_function() {
+    local fn="$1"
+    local suffix="${fn//-/_}"
+    local debug_fn="debug_${suffix}"
+    local original_fn="__install_debug_original_${suffix}"
+
+    if ! declare -f "$fn" >/dev/null 2>&1; then
+        return
+    fi
+    if ! declare -f "$debug_fn" >/dev/null 2>&1; then
+        return
+    fi
+
+    eval "$(declare -f "$fn" | sed "1s/^${fn}[[:space:]]*()/${original_fn}()/")"
+    eval "${fn}() {
+        ${original_fn} \"\$@\"
+        ${debug_fn} \"\$@\" || true
+    }"
+}
+
+install_debug_functions_to_hook=(
+    load_defaults
+    validate_config
+    commonDeps
+    install_or_update_repo
+    prepare_runtime_config
+    install_inotify_tools_if_needed
+    install_filewatch_service_func
+    install_backup_service_func
+    install_cron_func
+)
+
+for fn in "${install_debug_functions_to_hook[@]}"; do
+    install_debug_wrap_function "$fn"
+done

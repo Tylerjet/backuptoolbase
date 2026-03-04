@@ -28,3 +28,22 @@ cp ~/backuptoolbase/install.conf.example ~/backuptoolbase/install.conf
 ```shell
 ~/backuptoolbase/script.sh -config ~/backuptoolbase/install.conf -c "Manual backup"
 ```
+
+## Debug Mode
+
+### Installer Debug
+```shell
+~/backuptoolbase/install.sh -d -config ~/backuptoolbase/install.conf
+```
+
+### Backup Debug
+```shell
+~/backuptoolbase/script.sh -d -config ~/backuptoolbase/install.conf
+```
+
+### Debug Output Includes
+- Invocation and active config path
+- Masked config preview (tokens/secrets hidden)
+- Resolved runtime values
+- Dependency checks
+- Service and cron state details

@@ -8,6 +8,7 @@ Usage: $(basename "$0") [options]
 Options:
   -config, --config <path>   Path to config file.
                              Default resolution: ./install.conf then ./.env
+  -d, --debug                Enable debug output
   -h, --help                 Show this help
 EOF
 }
@@ -50,6 +51,10 @@ parse_args() {
             fi
             config_path="$2"
             shift 2
+            ;;
+        -d | --debug)
+            debug_output=true
+            shift
             ;;
         -h | --help)
             usage
@@ -131,6 +136,8 @@ init() {
 
     source "$parent_path/utils/utils.func"
     unique_id=$(getUniqueid)
+    debug_output=false
+    original_args=("$@")
 
     parse_args "$@"
 
@@ -149,6 +156,10 @@ init() {
     fi
 
     source "$config_path"
+    if [[ "$debug_output" == true ]]; then
+        source "$parent_path/utils/install-debug.func"
+        debug_install_context
+    fi
     load_defaults
     validate_config
 }

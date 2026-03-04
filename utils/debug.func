@@ -1,72 +1,246 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-functions_to_hook=("checkUpdates" "checkEnv" "createBackupFolder")
+debug_config_path="${config_path:-$parent_path/.env}"
 
-debug_checkUpdates() {
-    debug_line 1 "Update"
-    echo -e "Running on branch: $(git -C "$parent_path" branch --show-current)"
-    echo -e "Running on commit: $(git -C "$parent_path" rev-parse HEAD | cut -c1-7)"
-    debug_line 2
+debug_print_section() {
+    debug_line 1 "$1"
 }
 
-debug_checkEnv() {
-    debug_line 1 "Last Command"
-    if [[ "$SHELL" == */bash* ]]; then
-        echo -e "Command: $0 $args"
+debug_mask_url() {
+    # Hide any credentials in URLs like https://token@host/org/repo.git
+    printf "%s\n" "$1" | sed -E 's#(https?://)[^/@]+@#\1***@#'
+}
+
+debug_print_invocation() {
+    local quoted_args=()
+    local arg
+
+    if declare -p original_args >/dev/null 2>&1; then
+        for arg in "${original_args[@]}"; do
+            quoted_args+=("$(printf "%q" "$arg")")
+        done
     fi
-    debug_line 3 "Env"
-    while IFS= read -r line; do
-        if [[ $line == github_token=* ]]; then
-            echo "github_token=****************"
-        else
+
+    echo "Command: $(printf "%q" "$0") ${quoted_args[*]}"
+    echo "Config path: $debug_config_path"
+}
+
+debug_print_config() {
+    if [[ ! -f "$debug_config_path" ]]; then
+        echo "Config file not found: $debug_config_path"
+        return
+    fi
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^[[:space:]]*# ]] || [[ -z "$line" ]]; then
             echo "$line"
+            continue
         fi
-    done <$HOME/backuptoolbase/.env
-    debug_line 2
-    if [[ $git_host == "github.com" ]]; then
-        debug_line 1 "Repo Check"
-        if curl -fsS "https://api.github.com/repos/${github_username}/${github_repository}" >/dev/null; then
-            echo "The GitHub repo ${github_username}/${github_repository} exists (public)"
-        else
-            echo "Error: no GitHub repo ${github_username}/${github_repository} found (maybe private)"
-        fi
-        debug_line 2
+
+        local key="${line%%=*}"
+        case "$key" in
+        github_token | *token* | *secret* | *password*)
+            echo "${key}=********"
+            ;;
+        *)
+            echo "$line"
+            ;;
+        esac
+    done <"$debug_config_path"
+}
+
+debug_checkUpdates() {
+    debug_print_section "Update"
+    echo "Project branch: $(git -C "$parent_path" branch --show-current 2>/dev/null || echo unknown)"
+    echo "Project commit: $(git -C "$parent_path" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+    local upstream_ref
+    local upstream_remote
+    local upstream_branch
+    local remote_commit
+    upstream_ref=$(git -C "$parent_path" rev-parse --abbrev-ref @{u} 2>/dev/null || true)
+    if [[ -n "$upstream_ref" ]]; then
+        upstream_remote="${upstream_ref%%/*}"
+        upstream_branch="${upstream_ref#*/}"
+        remote_commit=$(git -C "$parent_path" ls-remote "$upstream_remote" "$upstream_branch" 2>/dev/null | cut -f1 | head -n1)
+        echo "Tracking ref: $upstream_ref"
+        echo "Remote commit: ${remote_commit:0:7}"
+    else
+        echo "Tracking ref: none"
     fi
-    debug_line 1 "Home DIR"
-    echo -e "\$HOME: $HOME"
-    debug_line 3 "Systemd Services"
-    echo -e "List/Status of backuptoolbase related systemd services:\n\n"
-    echo -e "backuptoolbase-filewatch.service:\n"
-    systemctl status backuptoolbase-filewatch.service | head -n 50
-    echo -e "\nbackuptoolbase-on-boot.service:\n"
-    systemctl status backuptoolbase-on-boot.service | head -n 50
-    echo -e "\nbackuptoolbase.service:\n"
-    systemctl status backuptoolbase.service | head -n 50
     debug_line 2
 }
 
 debug_createBackupFolder() {
-  echo "This is next"
+    debug_print_section "Backup Folder"
+    echo "Backup path: $backup_path"
+    echo "Branch name: $branch_name"
+    if [[ -d "$backup_path/.git" ]]; then
+        local active_branch
+        local origin_url
+        active_branch=$(git -C "$backup_path" symbolic-ref --short -q HEAD 2>/dev/null || echo detached)
+        origin_url=$(git -C "$backup_path" remote get-url origin 2>/dev/null || echo unset)
+        echo "Git initialized: yes"
+        echo "Active backup branch: $active_branch"
+        echo "Origin URL: $(debug_mask_url "$origin_url")"
+    else
+        echo "Git initialized: no"
+    fi
+    debug_line 2
 }
 
-for fn in "${functions_to_hook[@]}"; do
-    fn_def_file=$(mktemp)
-    fn_wrapper_file=$(mktemp)
+debug_checkEnv() {
+    debug_print_section "Invocation"
+    debug_print_invocation
 
-    # 1) Dump the original function and rename it to ${fn}_original
-    declare -f "$fn" | sed "1s/^$fn *()/${fn}_original()/" >"$fn_def_file"
+    debug_line 3 "Config"
+    debug_print_config
 
-    # 2) Build your wrapper that calls the renamed original + debug
-    {
-        echo "${fn}() {"
-        echo "  ${fn}_original \"\$@\""
-        echo "  debug_${fn} &"
-        echo "}"
-    } >"$fn_wrapper_file"
+    debug_line 3 "Git Identity"
+    echo "git user.name: $(git config user.name 2>/dev/null || echo unset)"
+    echo "git user.email: $(git config user.email 2>/dev/null || echo unset)"
 
-    # 3) Source them so both the _original and wrapper exist in your shell
-    source "$fn_def_file"
-    source "$fn_wrapper_file"
+    if [[ "$git_host" == "github.com" ]]; then
+        debug_line 3 "Repo Check"
+        local api_status
+        if [[ -n "$github_token" ]]; then
+            api_status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $github_token" "https://api.github.com/repos/${github_username}/${github_repository}")
+        else
+            api_status=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/repos/${github_username}/${github_repository}")
+        fi
+        echo "GitHub API status for ${github_username}/${github_repository}: $api_status"
+    fi
 
-    rm -f "$fn_def_file" "$fn_wrapper_file"
+    debug_line 3 "Environment"
+    echo "\$HOME: $HOME"
+    echo "backup_path: $backup_path"
+    echo "git_protocol: $git_protocol"
+    echo "git_host: $git_host"
+
+    debug_line 3 "System Services"
+    if command -v systemctl >/dev/null 2>&1; then
+        for service in backuptoolbase-filewatch.service backuptoolbase-on-boot.service backuptoolbase.service; do
+            echo "$service:"
+            systemctl status "$service" 2>/dev/null | head -n 20 || echo "not available"
+            echo
+        done
+    else
+        echo "systemctl unavailable on this system."
+    fi
+    debug_line 2
+}
+
+debug_commonDeps() {
+    debug_print_section "Dependencies"
+    local dep
+    local version
+    for dep in git jq curl rsync inotifywait; do
+        if command -v "$dep" >/dev/null 2>&1; then
+            case "$dep" in
+            git) version=$(git --version 2>/dev/null | head -n1) ;;
+            jq) version=$(jq --version 2>/dev/null) ;;
+            curl) version=$(curl --version 2>/dev/null | head -n1) ;;
+            rsync) version=$(rsync --version 2>/dev/null | head -n1) ;;
+            inotifywait) version=$(inotifywait --version 2>/dev/null | head -n1) ;;
+            esac
+            echo "$dep: installed (${version:-version unknown})"
+        else
+            echo "$dep: missing"
+        fi
+    done
+    debug_line 2
+}
+
+debug_copyFiles() {
+    debug_print_section "Copy Files"
+    local configured=0
+    local matched=0
+    local path
+    local files_count
+
+    for path in "${backupPaths[@]}"; do
+        [[ -z "$path" ]] && continue
+        configured=$((configured + 1))
+        if compgen -G "$HOME/$path" >/dev/null; then
+            matched=$((matched + 1))
+        fi
+    done
+
+    files_count=$(find "$backup_path" -type f ! -path '*/.git/*' 2>/dev/null | wc -l | tr -d ' ')
+    echo "Configured backup paths: $configured"
+    echo "Matched backup globs: $matched"
+    echo "Files staged into backup folder (pre-commit): $files_count"
+    debug_line 2
+}
+
+debug_pre_commitCleanup() {
+    debug_print_section "Pre-commit Cleanup"
+    local cached_count
+    cached_count=$(git -C "$backup_path" diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+    echo "Cached index entries after cleanup: $cached_count"
+    debug_line 2
+}
+
+debug_pushCommit() {
+    debug_print_section "Push"
+    echo "Last commit: $(git -C "$backup_path" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "Last message: $(git -C "$backup_path" log -1 --pretty=%s 2>/dev/null || echo unknown)"
+
+    local upstream
+    local divergence
+    upstream=$(git -C "$backup_path" rev-parse --abbrev-ref @{u} 2>/dev/null || true)
+    if [[ -n "$upstream" ]]; then
+        divergence=$(git -C "$backup_path" rev-list --left-right --count "${upstream}...HEAD" 2>/dev/null || true)
+        echo "Tracking: $upstream"
+        echo "Divergence (behind ahead): ${divergence:-unknown}"
+    else
+        echo "Tracking: none"
+    fi
+    debug_line 2
+}
+
+debug_cleanUp() {
+    debug_print_section "Cleanup"
+    local remaining_count
+    remaining_count=$(find "$backup_path" -maxdepth 1 -mindepth 1 ! -name '.git' ! -name '.gitmodules' ! -name 'README.md' | wc -l | tr -d ' ')
+    echo "Remaining non-git entries in backup path: $remaining_count"
+    if [[ "$remaining_count" -gt 0 ]]; then
+        find "$backup_path" -maxdepth 1 -mindepth 1 ! -name '.git' ! -name '.gitmodules' ! -name 'README.md' | head -n 20
+    fi
+    debug_line 2
+}
+
+debug_wrap_function() {
+    local fn="$1"
+    local suffix="${fn//-/_}"
+    local debug_fn="debug_${suffix}"
+    local original_fn="__debug_original_${suffix}"
+
+    if ! declare -f "$fn" >/dev/null 2>&1; then
+        return
+    fi
+    if ! declare -f "$debug_fn" >/dev/null 2>&1; then
+        return
+    fi
+
+    eval "$(declare -f "$fn" | sed "1s/^${fn}[[:space:]]*()/${original_fn}()/")"
+    eval "${fn}() {
+        ${original_fn} \"\$@\"
+        ${debug_fn} \"\$@\" || true
+    }"
+}
+
+debug_functions_to_hook=(
+    commonDeps
+    checkUpdates
+    createBackupFolder
+    checkEnv
+    copyFiles
+    pre-commitCleanup
+    pushCommit
+    cleanUp
+)
+
+for fn in "${debug_functions_to_hook[@]}"; do
+    debug_wrap_function "$fn"
 done
