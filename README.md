@@ -29,6 +29,13 @@ cp ~/backuptoolbase/install.conf.example ~/backuptoolbase/install.conf
 ~/backuptoolbase/script.sh -config ~/backuptoolbase/install.conf -c "Manual backup"
 ```
 
+### Preflight (Fix) Mode
+```shell
+~/backuptoolbase/script.sh -f -config ~/backuptoolbase/install.conf
+```
+- Exit code `0`: preflight passed (warnings allowed)
+- Exit code `1`: preflight failed
+
 ## Debug Mode
 
 ### Installer Debug

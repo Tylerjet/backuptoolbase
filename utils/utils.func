@@ -175,7 +175,7 @@ check_dependencies() {
             fi
 
             # Check if the installation was successful
-            if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+            if ! command -v "$pkg" >/dev/null 2>&1; then
                 echo "Installation failed. Please install '$pkg' manually."
                 return 1
             fi

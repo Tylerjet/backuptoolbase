@@ -9,7 +9,7 @@ Options:
   -config, --config <path>         Path to config file (default: $parent_path/.env)
   -c, --commit_message <message>   Commit message to use for this run
   -d, --debug                      Enable debug output
-  -f, --fix                        Run fix routine
+  -f, --fix                        Run preflight checks and exit
   -h, --help                       Show this help
 EOF
 }
@@ -72,6 +72,7 @@ init() {
     exclude=${exclude:-"*.swp" "*.tmp" "*.bak" "*.bkp" "*.csv" "*.zip"}
     commit_message_used=false
     debug_output=false
+    fix_mode=false
     # Check parameters
     set -- "${original_args[@]}"
     while [[ $# -gt 0 ]]; do
@@ -80,7 +81,7 @@ init() {
             shift 2
             ;;
         -f | --fix)
-            fix
+            fix_mode=true
             shift
             ;;
         -c | --commit_message)
@@ -113,8 +114,106 @@ init() {
 }
 
 # === Functions === #
+fix() {
+    fix_errors=()
+    fix_warnings=()
+    local dep
+    local path
+    local has_backup_paths=false
+
+    if [[ -z "${github_username:-}" || "$github_username" == "USERNAME" ]]; then
+        fix_errors+=("Missing required value: github_username")
+    fi
+
+    if [[ -z "${github_repository:-}" || "$github_repository" == "REPOSITORY" ]]; then
+        fix_errors+=("Missing required value: github_repository")
+    fi
+
+    if [[ "$git_protocol" != "ssh" ]]; then
+        if [[ -z "${github_token:-}" || "$github_token" == "ghp_xxxxxxxxxxxxxxxx" ]]; then
+            fix_errors+=("Missing required value: github_token (required unless git_protocol=ssh)")
+        fi
+    fi
+
+    for dep in git jq curl rsync; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            fix_errors+=("Missing required command: $dep")
+        fi
+    done
+
+    if declare -p backupPaths >/dev/null 2>&1; then
+        for path in "${backupPaths[@]}"; do
+            if [[ -n "$path" ]]; then
+                has_backup_paths=true
+                break
+            fi
+        done
+    fi
+
+    if ! $has_backup_paths; then
+        fix_warnings+=("backupPaths is empty. Backup runs will not include files.")
+    fi
+
+    if [[ ! -d "$HOME" ]]; then
+        fix_errors+=("\$HOME does not exist or is not a directory: $HOME")
+    elif [[ ! -r "$HOME" ]]; then
+        fix_errors+=("\$HOME is not readable: $HOME")
+    fi
+
+    echo -e "${Y}●${NC} Running preflight checks..."
+
+    if [[ ${#fix_warnings[@]} -gt 0 ]]; then
+        local warning
+        for warning in "${fix_warnings[@]}"; do
+            echo -e "${Y}●${NC} Warning: $warning"
+        done
+    fi
+
+    if [[ ${#fix_errors[@]} -gt 0 ]]; then
+        local error
+        for error in "${fix_errors[@]}"; do
+            echo -e "${R}●${NC} Error: $error"
+        done
+        echo -e "${R}●${NC} Preflight failed.\n"
+        return 1
+    fi
+
+    echo -e "${G}●${NC} Preflight passed.\n"
+    return 0
+}
+
 checkUpdates() {
-    [ $(git -C "$parent_path" rev-parse HEAD) = $(git -C "$parent_path" ls-remote $(git -C "$parent_path" rev-parse --abbrev-ref @{u} | sed 's/\// /g') | cut -f1) ] && echo -e "Up to date\n" || echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
+    local local_commit
+    local upstream_ref
+    local upstream_remote
+    local upstream_branch
+    local remote_commit
+
+    local_commit=$(git -C "$parent_path" rev-parse HEAD 2>/dev/null || true)
+    if [[ -z "$local_commit" ]]; then
+        echo -e "${Y}●${NC} Unable to determine local project commit. Skipping update check.\n"
+        return 0
+    fi
+
+    upstream_ref=$(git -C "$parent_path" rev-parse --abbrev-ref @{u} 2>/dev/null || true)
+    if [[ -z "$upstream_ref" ]]; then
+        echo -e "${Y}●${NC} No upstream configured for project repository. Skipping update check.\n"
+        return 0
+    fi
+
+    upstream_remote="${upstream_ref%%/*}"
+    upstream_branch="${upstream_ref#*/}"
+    remote_commit=$(git -C "$parent_path" ls-remote "$upstream_remote" "$upstream_branch" 2>/dev/null | cut -f1 | head -n1)
+    if [[ -z "$remote_commit" ]]; then
+        echo -e "${Y}●${NC} Unable to resolve remote commit for $upstream_ref. Skipping update check.\n"
+        return 0
+    fi
+
+    if [[ "$local_commit" == "$remote_commit" ]]; then
+        echo -e "Up to date\n"
+    else
+        echo -e "${Y}●${NC} Update ${Y}Available!${NC}\n"
+    fi
 }
 
 createBackupFolder() {
@@ -189,32 +288,33 @@ checkEnv() {
 copyFiles() {
     # Iterate through backupPaths array and copy files to the backup folder while ignoring symbolic links
     for path in "${backupPaths[@]}"; do
-        fullPath="$HOME/$path"
-        if [[ -d "$fullPath" && ! -f "$fullPath" ]]; then
-            # Check if the directory path ends with only a '/'
-            if [[ "$path" =~ /$ ]]; then
-                # If it ends with '/', replace it with '/*'
-                backupPaths[$i]="$path*"
-            elif [[ -d "$path" ]]; then
-                # If it's a directory without '/', add '/*' at the end
-                backupPaths[$i]="$path/*"
+        local search_pattern
+        search_pattern="$HOME/$path"
+
+        if [[ -d "$search_pattern" ]]; then
+            if [[ "$search_pattern" =~ /$ ]]; then
+                search_pattern="${search_pattern}*"
+            else
+                search_pattern="${search_pattern%/}/*"
             fi
         fi
 
-        if compgen -G "$fullPath" >/dev/null; then
-            # Iterate over every file in the path
-            for file in $path; do
-                # Skip if file is symbolic link
-                if [ -h "$file" ]; then
+        if compgen -G "$search_pattern" >/dev/null; then
+            while IFS= read -r file; do
+                if [[ -h "$file" ]]; then
                     echo "Skipping symbolic link: $file"
-                elif [ -n "$(find $file -regex '.*/\.git*')" ]; then
+                elif find "$file" -regex '.*/\.git*' -print -quit | grep -q '.'; then
                     echo ".git folder: $file detected, don't add back to backup"
                 else
-                    file=$(readlink -e "$file") # Get absolute path before copy (Allows usage of .. in filepath eg. ../../etc/fstab resovles to /etc/fstab )
-                    echo "Backing up: $file"
-                    rsync -Rr "${file##"$HOME"/}" "$backup_path"
+                    local resolved_file
+                    resolved_file=$(readlink -e "$file")
+                    if [[ -z "$resolved_file" ]]; then
+                        continue
+                    fi
+                    echo "Backing up: $resolved_file"
+                    rsync -Rr "${resolved_file##"$HOME"/}" "$backup_path"
                 fi
-            done
+            done < <(compgen -G "$search_pattern")
         fi
     done
 
@@ -227,10 +327,10 @@ copyFiles() {
 
     # utilize gits native exclusion file .gitignore to add files that should not be uploaded to remote.
     # Loop through exclude array and add each element to the end of .gitignore
-    for i in ${exclude[@]}; do
+    for i in "${exclude[@]}"; do
         # add new line to end of .gitignore if there is not one
         [[ $(tail -c1 "$backup_path/.gitignore" | wc -l) -eq 0 ]] && echo "" >>"$backup_path/.gitignore"
-        echo $i >>"$backup_path/.gitignore"
+        echo "$i" >>"$backup_path/.gitignore"
     done
 }
 
@@ -258,6 +358,10 @@ cleanUp() {
 
 # === Main === #
 init "$@"
+if $fix_mode; then
+    fix
+    exit $?
+fi
 commonDeps
 checkUpdates
 createBackupFolder
